@@ -1,0 +1,33 @@
+# installation of BL_2D software
+# 
+#  July 2020
+# 
+# If first install, make directory for preprocessing
+
+#mkdir prepro
+#
+#
+# installation of direct solver
+#
+
+python compile_rhs.py
+python compile_borders.py
+python compile_geom.py
+python compile_norm.py
+python compile_tur.py
+
+#
+# AD with Tapenade
+#
+
+python tap_tangent.py 
+python tap_tangent_bc.py 
+python tap_tangent_jn.py 
+python tap_adjoint.py
+python tap_adjoint_bc.py
+python tap_adjoint_jn.py
+
+python compile_tangent.py
+python compile_adj.py
+
+
