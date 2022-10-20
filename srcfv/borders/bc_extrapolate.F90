@@ -1,14 +1,6 @@
 ! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !
-! File: DynHoLab/DynKernel/borders/Fortran/extrapolate.F90
-!
-! Created on 24th september 2013
-!
-! @author:        P.-Y. Outtier and C. Content
-! @contact:       pierre-yves.outtier@ensam.eu or cedric.content@ensam.eu
-! @organization:  Arts et Metiers ParisTech - DynFluid
-!
 ! @summary:       These subroutines compute extrapolation of a function
 !                 at various orders of accuracy and sometimes using a
 !                 mesh geometry to ponderate the extrapolation.
