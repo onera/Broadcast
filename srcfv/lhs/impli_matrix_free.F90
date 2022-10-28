@@ -1,5 +1,5 @@
-! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 ! =============================================================================
 !                Implicit matrix free phase 2D NS
@@ -23,18 +23,20 @@ subroutine impli_matrix_free_2d(dwi,nx,ny,w,dw,vol,volf,dtcoef,cfl, &
   ! Returned objects ------------------------------------------------
   real(8),dimension(1-gh:im+gh,1-gh:jm+gh,em    ),intent(inout) :: dwi
   ! Local variables -------------------------------------------------
-  integer :: i,j,l,equa,kdir,i0,j0,ipt,le,eq2
-  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh    ) :: tloc,mu
-  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh,em ) :: d2w,dfi,dgi,hn,f,g
+  integer :: i,j,l,equa,kdir,i0,j0,ipt,le,eq2,ip,jp
+  integer :: ipas,imin,jmin,imax,jmax,irspec,jrspec
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh    ) :: tau0,tloc,mu
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh,em ) :: d1w,hn,f,g,ssor
   real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh    ) :: coefdiag
   real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh ,2 ) :: coef !specrad
-  real(8),dimension(em) :: wi,fi,gi
+  real(8),dimension(em) :: wi,fi,gi,d2w,dfi,dgi
   real(8) :: velxi,velyi,velzi,pint,tint,htot
   real(8) :: rhom1,roki,norm,specdiff,iro,rol,ror,rom1
   real(8) :: ONE,HALF, ZERO,TWO,rom1l,rom1r,gampr,gamprt
-  real(8) :: uu,vv,cc,gam1,mutot
-  real(8) :: dtm1, dist,vitc,dt_euler,dt_ns,cvm1
+  real(8) :: uu,vv,cc,gam1,mutot,cdiagm1,step
+  real(8) :: dtm1, dist,vitc,dt_euler,dt_ns,cvm1,dt
   real(8) :: ec,eloc,betas,diagm1,cflm1,dtm1save
+  real(8) :: multi, multi2,nxloc, nyloc
   ! -----------------------------------------------------------------
   HALF = 0.5d0
   ZERO = 0.d0
@@ -58,7 +60,8 @@ subroutine impli_matrix_free_2d(dwi,nx,ny,w,dw,vol,volf,dtcoef,cfl, &
 #include "phys/viscosity.F"
 #include "lhs/time_step.F"
   ! compute diagonal coefficient------------------------------------------------------
-  coefdiag(i,j) = dtm1 * dtcoef * vol(i,j) ! dtcoef/tau0   
+  ! coefdiag(i,j) = dtm1 * dtcoef * vol(i,j) ! dtcoef/tau0   
+    tau0(i,j) = dt/vol(i,j)
   enddo      
   enddo 
   
@@ -80,7 +83,7 @@ subroutine impli_matrix_free_2d(dwi,nx,ny,w,dw,vol,volf,dtcoef,cfl, &
   
 
   !
-  loop_kdir: do kdir=1,2
+  do kdir=1,2
     i0 = -kdir+2
     j0 = kdir-1
     !
@@ -89,87 +92,208 @@ subroutine impli_matrix_free_2d(dwi,nx,ny,w,dw,vol,volf,dtcoef,cfl, &
 #include "lhs/specrad_ns.F"
     enddo
     enddo
-    do j = 1 , jm
-    do i = 1 , im
-      coefdiag(i,j)=coefdiag(i,j) + coef(i,j,kdir) + coef(i+i0,j+j0,kdir)
-    enddo
-    enddo
-  enddo loop_kdir
+    
+  enddo 
   
-  loop_subite: do l=1,lmax
+  do j = 1 , jm
+  do i = 1 , im
+    coefdiag(i,j)=tau0(i,j) * ( coef(i,j,1) + coef(i+1,j  ,1) &
+                               +coef(i,j,2) + coef(i  ,j+1,2) ) + dtcoef
+  
+    !copy rhs
+    d1w(i,j,:) =  dw(i,j,:) * tau0(i,j)
+    
+  enddo
+  enddo
+  
+  ssor = ZERO
 
-    d2w = dw
+  loop_subite: do l=1,lmax
+    !
+    step = (-1.d0)**(l-1) 
+    if(step.gt.0.5d0) then
+      imin =  1
+      jmin =  1
+      imax = im
+      jmax = jm
+      ipas =  1
+    else
+      imin = im
+      jmin = jm
+      imax =  1
+      jmax =  1
+      ipas = -1
+    endif
+    !===========================================================
+    !  L phase : L =  1/2 ( df + rspec dw(i-1) )
+    !  U phase : U = -1/2 ( df - rspec dw(i+1) )
+    !===========================================================
+    ! step = (-1.d0)**(l-1)
+    ! step = 1.d0
+    do j=1,jm
+    do i=1,im
+      dwi(i,j,:) = d1w(i,j,:) + ssor(i,j,:)
+    enddo
+    enddo
+    ssor = ZERO
     !
     ! Computation of the left hand side
     !
-    loop_kdir_inner: do kdir=1,2
-      i0 = -kdir+2
-      j0 = kdir-1
-      !
-      do j = 1 , jm + j0
-      do i = 1 , im + i0
-        !norm = dsqrt( nx(i,j,kdir)**2 + ny(i,j,kdir)**2)
-        hn(i,j,:)= &
-             + HALF *(dfi(i-i0,j-j0,:)+dfi(i,j,:))*nx(i,j,kdir) &
-             + HALF *(dgi(i-i0,j-j0,:)+dgi(i,j,:))*ny(i,j,kdir) 
-      enddo
-      enddo
-      !
-      do j = 1 , jm
-      do i = 1 , im
-        d2w(i,j,:) =  d2w(i,j,:)  + hn(i,j,:) - hn(i+i0,j+j0,:) &
-                     + coef(i   ,j   ,kdir) * dwi(i-i0,j-j0,:) &
-                     + coef(i+i0,j+j0,kdir) * dwi(i+i0,j+j0,:)
+    do j = jmin , jmax, ipas
+    do i = imin , imax, ipas
+  
+      d2w(:) = ZERO
+
+      do kdir=1,2
+          !
+          i0 = ipas*(-kdir+2)
+          j0 = ipas*( kdir-1)
+          !
+          ip = i - i0
+          jp = j - j0
+          !
+          irspec = i - i0 * (1-ipas)/2
+          jrspec = j - j0 * (1-ipas)/2
+          !
+          nxloc = nx(irspec,jrspec,kdir)
+          nyloc = ny(irspec,jrspec,kdir)
+
+          !fluxes
+          wi(:) = w(ip,jp,:) + dwi(ip,jp,:)
+          rhom1 = ONE/wi(1)
+          velxi = wi(2) * rhom1
+          velyi = wi(3) * rhom1
+          velzi = wi(4) * rhom1
+          pint = gam1*( wi(5) - HALF*wi(1)*( velxi*velxi + velyi*velyi +velzi*velzi) )
+          !
+          ! Actualisation des flux intermediaires
+          fi(1) = wi(2)
+          fi(2) = wi(2)*velxi + pint
+          fi(3) = wi(2)*velyi
+          fi(4) = wi(2)*velzi
+          fi(5) = velxi*( wi(5) + pint )
+          gi(1) = wi(3)
+          gi(2) = wi(3)*velxi
+          gi(3) = wi(3)*velyi + pint
+          gi(4) = wi(3)*velzi
+          gi(5) = velyi*( wi(5) + pint )
+          
+          dfi(:) = fi(:) - f(ip,jp,:)
+          dgi(:) = gi(:) - g(ip,jp,:)
+          
+
+          multi = HALF * step
+          multi2 = coef(irspec,jrspec, kdir)
+
+          d2w(1:5) = d2w(1:5) + multi  *( dfi(1:5)*nxloc +  &
+                                          dgi(1:5)*nyloc  ) &
+                              + multi2 *  dwi(ip,jp,1:5)
+          
+          !
+          ! end of kdir loop
+        enddo
+        !
+        !===========================================================
+        ! solve the system
+        !   D Dw = rhs
+        !===========================================================
+        !
+        cdiagm1 = ONE/coefdiag(i,j)
+        d2w(1)       =  d2w(1) * tau0(i,j)
+        ssor(i,j,1)  =  d2w(1) + ssor(i,j,1)
+        dwi(i,j,1)   = (d2w(1) +  dwi(i,j,1)) * cdiagm1
         
-      enddo
-      enddo
-      
-    enddo loop_kdir_inner
-    !
-    ! Computation of the intermediate increment
-    !
-    do j=1,jm
-    do i=1,im
-        diagm1 = ONE/coefdiag(i,j)
-        dwi(i,j,1) = d2w(i,j,1) * diagm1
-        dwi(i,j,2) = d2w(i,j,2) * diagm1
-        dwi(i,j,3) = d2w(i,j,3) * diagm1
-        dwi(i,j,4) = d2w(i,j,4) * diagm1
-        dwi(i,j,5) = d2w(i,j,5) * diagm1
+        d2w(2)       =  d2w(2) * tau0(i,j)
+        ssor(i,j,2)  =  d2w(2) + ssor(i,j,2)
+        dwi(i,j,2)   = (d2w(2) +  dwi(i,j,2)) * cdiagm1
+        
+        d2w(3)       =  d2w(3) * tau0(i,j)
+        ssor(i,j,3)  =  d2w(3) + ssor(i,j,3)
+        dwi(i,j,3)   = (d2w(3) +  dwi(i,j,3)) * cdiagm1
+        
+        d2w(4)       =  d2w(4) * tau0(i,j)
+        ssor(i,j,4)  =  d2w(4) + ssor(i,j,4)
+        dwi(i,j,4)   = (d2w(4) +  dwi(i,j,4)) * cdiagm1
+        
+        d2w(5)       =  d2w(5) * tau0(i,j)
+        ssor(i,j,5)  =  d2w(5) + ssor(i,j,5)
+        dwi(i,j,5)   = (d2w(5) +  dwi(i,j,5)) * cdiagm1
+        
     enddo
     enddo
     !
     ! Actualisation de wi
     !
-
-    do j = 1 , jm
-    do i = 1 , im
-      wi(:) = w(i,j,:) + dwi(i,j,:)
-      rhom1 = ONE/wi(1)
-      velxi = wi(2) * rhom1
-      velyi = wi(3) * rhom1
-      velzi = wi(4) * rhom1
-      pint = gam1*( wi(5) - HALF*wi(1)*( velxi*velxi + velyi*velyi +velzi*velzi) )
-      !
-      ! Actualisation des flux intermediaires
-      !
-      fi(1) = wi(2)
-      fi(2) = wi(2)*velxi + pint
-      fi(3) = wi(2)*velyi
-      fi(4) = wi(2)*velzi
-      fi(5) = velxi*( wi(5) + pint )
-      gi(1) = wi(3)
-      gi(2) = wi(3)*velxi
-      gi(3) = wi(3)*velyi + pint
-      gi(4) = wi(3)*velzi
-      gi(5) = velyi*( wi(5) + pint )
-      !
-      ! Calcul des increments des flux
-      !
-      dfi(i,j,:) = fi(:) - f(i,j,:)
-      dgi(i,j,:) = gi(:) - g(i,j,:)
-    enddo
-    enddo
+    ! BCs on dwi (Neumann treatment)
+    if (l.lt.lmax) then
+      j = jm+1
+      do i=1,im
+        dwi(i,j,1) = dwi(i,j-1,1)
+        dwi(i,j,2) = dwi(i,j-1,2)
+        dwi(i,j,3) = dwi(i,j-1,3)
+        dwi(i,j,4) = dwi(i,j-1,4)
+        dwi(i,j,5) = dwi(i,j-1,5)
+      enddo
+      j = 0 
+      do i=1,im
+        dwi(i,j,1) = dwi(i,j+1,1)
+        dwi(i,j,2) = dwi(i,j+1,2)
+        dwi(i,j,3) = dwi(i,j+1,3)
+        dwi(i,j,4) = dwi(i,j+1,4)
+        dwi(i,j,5) = dwi(i,j+1,5)
+      enddo
+      i = im+1
+      do j=1,jm
+        dwi(i,j,1) = dwi(i-1,j,1)
+        dwi(i,j,2) = dwi(i-1,j,2)
+        dwi(i,j,3) = dwi(i-1,j,3)
+        dwi(i,j,4) = dwi(i-1,j,4)
+        dwi(i,j,5) = dwi(i-1,j,5)
+      enddo
+      i = 0 
+      do j=1,jm
+        dwi(i,j,1) = dwi(i+1,j,1)
+        dwi(i,j,2) = dwi(i+1,j,2)
+        dwi(i,j,3) = dwi(i+1,j,3)
+        dwi(i,j,4) = dwi(i+1,j,4)
+        dwi(i,j,5) = dwi(i+1,j,5)
+      enddo
+    else 
+      j = jm+1
+      do i=1,im
+        dwi(i,j,1) = ZERO
+        dwi(i,j,2) = ZERO
+        dwi(i,j,3) = ZERO
+        dwi(i,j,4) = ZERO
+        dwi(i,j,5) = ZERO
+      enddo
+      j = 0 
+      do i=1,im
+        dwi(i,j,1) = ZERO
+        dwi(i,j,2) = ZERO
+        dwi(i,j,3) = ZERO
+        dwi(i,j,4) = ZERO
+        dwi(i,j,5) = ZERO
+      enddo
+      i = im+1
+      do j=1,jm
+        dwi(i,j,1) = ZERO
+        dwi(i,j,2) = ZERO
+        dwi(i,j,3) = ZERO
+        dwi(i,j,4) = ZERO
+        dwi(i,j,5) = ZERO
+      enddo
+      i = 0 
+      do j=1,jm
+        dwi(i,j,1) = ZERO
+        dwi(i,j,2) = ZERO
+        dwi(i,j,3) = ZERO
+        dwi(i,j,4) = ZERO
+        dwi(i,j,5) = ZERO
+      enddo
+    
+    endif
+    
     !
   enddo loop_subite
   !

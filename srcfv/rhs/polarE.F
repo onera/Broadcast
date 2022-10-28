@@ -3,9 +3,13 @@
   ! y = radial
   ! z = theta
   
-  distm1    = ONE/abs( yc(i,j) - ym )
-  voldistm1 = vol(i,j)*distm1 
-  lambda    = mu(i,j) *cpprandtl
+  distm1    = ONE/(yc(i,j) - ym) 
+  !if (distm1.gt.1.d-15) then
+  !   distm1    = ONE/abs( distm1 ) ! + 1.d-15
+  !endif
+  
+  voldistm1 = vol(i,j)* distm1 
+  lambda    = mu(i,j) * cpprandtl
   
   ur     = w(i,j,3)/w(i,j,1)
   utheta = w(i,j,4)/w(i,j,1)
@@ -33,7 +37,7 @@
      
   t_xy   =       mu(i,j) * (gradv(i,j,1) + gradu(i,j,2))
   t_yy   = TWO * mu(i,j) *  gradv(i,j,2) - TWOTHIRD * mu(i,j) * divu
-  t_yz   =       mu(i,j) * (gradw(i,j,2) - utheta*distm1)
+  t_yz   =       mu(i,j) * (gradw(i,j,2) - utheta*distm1)! +gradv(i,j,3)
   
   srcv2  =       t_xy
   srcv3  =       t_yy !- t_zz
@@ -41,9 +45,9 @@
   srcv5  = velx(i,j)*t_xy + vely(i,j)*t_yy + velz(i,j)*t_yz &
           + lambda * grad_temp(i,j,2)
    
-  src1   = voldistm1 *  srce1 
-  src2   = voldistm1 * (srce2 - srcv2)
-  src3   = voldistm1 * (srce3 - srcv3)
-  src4   = voldistm1 * (srce4 - srcv4)
-  src5   = voldistm1 * (srce5 - srcv5)
+  src1   = - voldistm1 *  srce1 
+  src2   = - voldistm1 * (srce2 - srcv2)
+  src3   = - voldistm1 * (srce3 - srcv3)
+  src4   = - voldistm1 * (srce4 - srcv4)
+  src5   = - voldistm1 * (srce5 - srcv5)
   

@@ -6,6 +6,35 @@
 !                 mesh geometry to ponderate the extrapolation.
 !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+subroutine bc_extrapolate_o0_2d(w,loc,interf,im,jm,gh,em)
+  !
+  !
+  implicit none
+  integer,intent(in) :: im,jm,gh,em
+  character(len=3),intent(in) :: loc
+  integer,dimension(2,2),intent(in) :: interf
+  real(8),dimension(1-gh:im+gh,1-gh:jm+gh,em),intent(inout) :: w
+  ! Local variables -----------------------------------------------------------
+  integer :: d1
+#include "init_2d.F"
+  
+             
+!$AD II-LOOP
+  do l = lmin,lmax
+    i =  imin + (l-lmin)*j0*j0
+    j =  jmin + (l-lmin)*i0*i0
+    do de = 1,gh
+      d1 = de - 1
+    
+      !ordre 0
+      w(i-i0*de,j-j0*de,:) = w(i-i0*d1,j-j0*d1,:) 
+      
+      
+                                                             
+  enddo
+  enddo
+  
+end subroutine bc_extrapolate_o0_2d
 
 subroutine bc_extrapolate_o2_2d(w,loc,interf,im,jm,gh,em)
   !

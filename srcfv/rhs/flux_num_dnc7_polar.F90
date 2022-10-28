@@ -1,4 +1,4 @@
-! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
+! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/
 
 ! =============================================================================
 !          consistent fluxes for DNC7 2D
@@ -95,12 +95,20 @@ subroutine flux_num_dnc7_polar_2d(residu,w,ym,x0,y0,nx,ny,xc,yc,vol,volf,gh,cp,c
   diffrow  = ZERO
   diffroe  = ZERO
   
+  ! Coef for grad o6
+  denom = 1.d0/60.d0
+  
+  b1 =  45.d0 * denom
+  b2 = - 9.d0 * denom
+  b3 =          denom 
+  
   denom = 1.d0/840.d0
   ! Coef for grad o8
-  b1 =  672.d0 * denom! 4.d0/5.d0
-  b2 = -168.d0 * denom!-1.d0/5.d0
-  b3 =  32.d0  * denom! 4.d0/105.d0
-  b4 = - 3.d0  * denom!-1.d0/280.d0
+  ! b1 =  672.d0 * denom! 4.d0/5.d0
+  ! b2 = -168.d0 * denom!-1.d0/5.d0
+  ! b3 =  32.d0  * denom! 4.d0/105.d0
+  ! b4 = - 3.d0  * denom!-1.d0/280.d0
+  
   
   !expression for FV
   ! c4 = a4
@@ -129,15 +137,15 @@ subroutine flux_num_dnc7_polar_2d(residu,w,ym,x0,y0,nx,ny,xc,yc,vol,volf,gh,cp,c
 #include "rhs/primvisc.F" 
   
   ! Work on interior domain minus one cell
-  
+ 
 !$AD II-LOOP
   do j = 1, jm
 !$AD II-LOOP
 !DIR$ IVDEP      
   do i = 1, im
-#include "rhs/gradop_prim_9pi.F"
-#include "rhs/gradop_prim_9pj.F"
-#include "rhs/gradient.F"
+#include "rhs/gradop_prim_7pi.F"
+#include "rhs/gradop_prim_7pj.F"
+#include "rhs/gradient_prim.F"
   enddo
   enddo
   

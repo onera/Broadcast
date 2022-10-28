@@ -1,4 +1,4 @@
-! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
+! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/
 
 ! =============================================================================
 !          consistent fluxes for DNC5 2D
@@ -86,12 +86,19 @@ subroutine flux_num_dnc5_2d(residu,w,x0,y0,nx,ny,xc,yc,vol,volf,gh,cp,cv,prandtl
   diffrow  = ZERO
   diffroe  = ZERO
   
+  ! Coef for grad o4
+  denom = 1.d0/12.d0
+  
+  b1 =  8.d0 * denom
+  b2 = -       denom 
+  
   ! Coef for grad o6
   denom = 1.d0/60.d0
   
-  b1 =  45.d0 * denom
-  b2 = - 9.d0 * denom
-  b3 =          denom
+  ! b1 =  45.d0 * denom
+  ! b2 = - 9.d0 * denom
+  ! b3 =          denom 
+  
    
   
   !expression for FV
@@ -119,7 +126,7 @@ subroutine flux_num_dnc5_2d(residu,w,x0,y0,nx,ny,xc,yc,vol,volf,gh,cp,cv,prandtl
   !$AD II-LOOP
   do j = 1, jm
 !$AD II-LOOP
-!GCC$ IVDEP            
+!DIR$ IVDEP            
   do i = 1, im
 ! #include "rhs/gradop_7pi.F"
 ! #include "rhs/gradop_7pj.F"
@@ -138,7 +145,7 @@ subroutine flux_num_dnc5_2d(residu,w,x0,y0,nx,ny,xc,yc,vol,volf,gh,cp,cv,prandtl
 !$AD II-LOOP
   do j = 4 , jm + 1
 !$AD II-LOOP
-!GCC$ IVDEP            
+!DIR$ IVDEP            
   do i = 1 , im + 1
  !
 #include "rhs/euler_o6.F"  
@@ -160,7 +167,7 @@ subroutine flux_num_dnc5_2d(residu,w,x0,y0,nx,ny,xc,yc,vol,volf,gh,cp,cv,prandtl
   ! off centered schemes for fluxes near wall
   j = 3
 !$AD II-LOOP
-!GCC$ IVDEP            
+!DIR$ IVDEP            
   do i = 1,im+1
     ! for idir
 #include "rhs/euler_o6_i.F"  
@@ -174,7 +181,7 @@ subroutine flux_num_dnc5_2d(residu,w,x0,y0,nx,ny,xc,yc,vol,volf,gh,cp,cv,prandtl
   enddo       
   j = 2            
 !$AD II-LOOP
-!GCC$ IVDEP            
+!DIR$ IVDEP            
   do i = 1,im+1
     ! for idir
 #include "rhs/euler_o6_i.F"
@@ -199,7 +206,7 @@ subroutine flux_num_dnc5_2d(residu,w,x0,y0,nx,ny,xc,yc,vol,volf,gh,cp,cv,prandtl
   
   j = 1
 !$AD II-LOOP
-!GCC$ IVDEP            
+!DIR$ IVDEP            
   do i = 1,im+1
     ! for idir (only works for infinite Wall)   
 #include "rhs/euler_o6_i.F"

@@ -1,4 +1,4 @@
-! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
+! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/
 
 ! =============================================================================
 !          consistent fluxes for DNC5 2D
@@ -84,12 +84,18 @@ subroutine flux_num_dnc5_nowall_2d(residu,w,x0,y0,nx,ny,xc,yc,vol,volf,gh,cp,cv,
   diffrow  = ZERO
   diffroe  = ZERO
   
+  ! Coef for grad o4
+  denom = 1.d0/12.d0
+  
+  b1 =  8.d0 * denom
+  b2 = -       denom 
+  
   ! Coef for grad o6
   denom = 1.d0/60.d0
   
-  b1 =  45.d0 * denom
-  b2 = - 9.d0 * denom
-  b3 =          denom 
+  ! b1 =  45.d0 * denom
+  ! b2 = - 9.d0 * denom
+  ! b3 =          denom 
   
   !expression for FV
 
@@ -118,8 +124,8 @@ subroutine flux_num_dnc5_nowall_2d(residu,w,x0,y0,nx,ny,xc,yc,vol,volf,gh,cp,cv,
 !$AD II-LOOP
 !DIR$ IVDEP            
   do i = 1, im
-#include "rhs/gradop_7pi.F"
-#include "rhs/gradop_7pj.F"
+#include "rhs/gradop_5pi.F"
+#include "rhs/gradop_5pj.F"
 #include "rhs/gradient.F"
   enddo
   enddo 

@@ -2,7 +2,7 @@
 !$AD II-LOOP
   do j = 1 , jm
 !$AD II-LOOP
-!GCC$ IVDEP      
+!DIR$ IVDEP      
   do i = 1 , im
 #include "rhs/balance.F"
   enddo

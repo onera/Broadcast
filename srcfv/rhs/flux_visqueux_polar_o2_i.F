@@ -2,8 +2,12 @@
     ! grad for viscous fluxes o2 - 3p
     !
 
-    volm1 = volf(i,j,1)
-    distm1    = ONE/abs(HALF*(y0(i,j) + y0(i,j+1))-ym)
+    volm1   = volf(i,j,1)
+    
+    distm1  = HALF*(y0(i,j) + y0(i,j+1))-ym
+    if (distm1.gt.1.d-15) then
+        distm1 = ONE/distm1
+    endif
 
     ! Normals
     

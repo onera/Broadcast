@@ -12,7 +12,6 @@
        hn(i,j,3,1) = fxrov1 - dissrov1 - (fvrov1 * nxloc + gvrov1 * nyloc)*sn
        !  
        hn(i,j,4,1) = fxrow1 - dissrow1 - (fvrow1 * nxloc + gvrow1 * nyloc)*sn
-       ! hn(i,j,4,1) = ZERO
        !  
        hn(i,j,5,1) = fxroe1 - dissroe1 - (fvroe1 * nxloc + gvroe1 * nyloc)*sn
 

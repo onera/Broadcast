@@ -1,6 +1,7 @@
-#include "rhs/spectralradius_j.F"
+! #include "rhs/spectralradius_j.F"
 ! correction Rossow JCP 2000
-! #include "rhs/spectralradiusRossow_j.F"
+!#include "rhs/spectralradiusRossow_j.F"
+#include "rhs/spectralradius_j.F"
 #include "rhs/ducrosfordnc_j.F"
 !   
 !     if (eps4.gt.1.d-12) then  

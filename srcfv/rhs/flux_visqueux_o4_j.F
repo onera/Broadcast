@@ -99,13 +99,11 @@
     fvrov2 =          mmu*(     uy +     vx        )    
     fvrow2 =          mmu*(                    wx  )    
     fvroe2 = (lambda*tx + uu*fvrou2 + vv*fvrov2 + ww * fvrow2)
-    ! fvroe2 = (lambda*tx + uu*fvrou2 + vv*fvrov2)
     
     gvrou2 =          mmu*(     uy +     vx      )  
     gvrov2 = TWOTHIRD*mmu*(    -ux + TWO*vy      )  
     gvrow2 =          mmu*(                   wy )  
-    gvroe2 = (lambda*ty + uu*gvrou2 + vv*gvrov2 + ww * gvrow2)
-    ! gvroe2 = (lambda*ty + uu*gvrou2 + vv*gvrov2)
+    gvroe2 = (lambda*ty + uu*gvrou2 + vv*gvrov2 + ww*gvrow2)
     
     !!  fvrou2 = TWOTHIRD*mmu*( TWO*ux -     vy  -  wz  )    
     !!  fvrov2 =          mmu*(     uy +     vx         )    

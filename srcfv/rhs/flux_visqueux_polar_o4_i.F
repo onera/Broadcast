@@ -4,7 +4,10 @@
     ! 1/16 = 0.0625 ccross = 1/12*1/16
     ! TWENTYFOURTH = ONE/24.d0
     ! ccros = TWELFTH*0.0625d0
-    distm1    = ONE/abs(HALF*(y0(i,j) + y0(i,j+1))-ym)
+    distm1  = HALF*(y0(i,j) + y0(i,j+1))-ym
+    if (distm1.gt.1.d-15) then
+        distm1 = ONE/distm1
+    endif
 
     volm1 = volf(i,j,1)
     

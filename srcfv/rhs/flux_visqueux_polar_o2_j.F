@@ -4,8 +4,8 @@
     volm1 = volf(i,j,2)
     
     distm1 = HALF*(y0(i,j) + y0(i+1,j)) - ym
-    if (distm1.ne.ZERO) then
-        distm1 = ONE/abs(distm1)
+    if (distm1.gt.1.d-15) then
+        distm1 = ONE/distm1
     endif
 
 

@@ -1,4 +1,4 @@
-! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
+! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/
 
 ! =============================================================================
 !          consistent fluxes for DNC7 2D
@@ -81,12 +81,19 @@ subroutine flux_num_dnc7_euler_nowall_2d(residu,w,x0,y0,nx,ny,xc,yc,vol,gh,cp,cv
   diffrow  = ZERO
   diffroe  = ZERO
   
+  ! Coef for grad o6
+  denom = 1.d0/60.d0
+  
+  b1 =  45.d0 * denom
+  b2 = - 9.d0 * denom
+  b3 =          denom 
+  
   denom = 1.d0/840.d0
   ! Coef for grad o8
-  b1 =  672.d0 * denom! 4.d0/5.d0
-  b2 = -168.d0 * denom!-1.d0/5.d0
-  b3 =  32.d0  * denom! 4.d0/105.d0
-  b4 = - 3.d0  * denom!-1.d0/280.d0
+  ! b1 =  672.d0 * denom! 4.d0/5.d0
+  ! b2 = -168.d0 * denom!-1.d0/5.d0
+  ! b3 =  32.d0  * denom! 4.d0/105.d0
+  ! b4 = - 3.d0  * denom!-1.d0/280.d0
   
   !expression for FV
   ! c4 = a4
@@ -127,33 +134,27 @@ subroutine flux_num_dnc7_euler_nowall_2d(residu,w,x0,y0,nx,ny,xc,yc,vol,gh,cp,cv
   do i = 1, im
        gui   = ( b1*(velx(i+1,j     ) - velx(i-1,j     )) &
                + b2*(velx(i+2,j     ) - velx(i-2,j     )) &
-               + b3*(velx(i+3,j     ) - velx(i-3,j     )) &
-               + b4*(velx(i+4,j     ) - velx(i-4,j     )) )
+               + b3*(velx(i+3,j     ) - velx(i-3,j     )) )
        
        gvi   = ( b1*(vely(i+1,j     ) - vely(i-1,j     )) &
                + b2*(vely(i+2,j     ) - vely(i-2,j     )) &
-               + b3*(vely(i+3,j     ) - vely(i-3,j     )) &
-               + b4*(vely(i+4,j     ) - vely(i-4,j     )) )
+               + b3*(vely(i+3,j     ) - vely(i-3,j     )) )
        
        gwi   = ( b1*(velz(i+1,j     ) - velz(i-1,j     )) &
                + b2*(velz(i+2,j     ) - velz(i-2,j     )) &
-               + b3*(velz(i+3,j     ) - velz(i-3,j     )) &
-               + b4*(velz(i+4,j     ) - velz(i-4,j     )) )
+               + b3*(velz(i+3,j     ) - velz(i-3,j     )) )
        
        guj   = ( b1*(velx(i,j+1   ) - velx(i,j-1   )) &
                + b2*(velx(i,j+2   ) - velx(i,j-2   )) &
-               + b3*(velx(i,j+3   ) - velx(i,j-3   )) &
-               + b4*(velx(i,j+4   ) - velx(i,j-4   )) )
+               + b3*(velx(i,j+3   ) - velx(i,j-3   )) )
        
        gvj   = ( b1*(vely(i,j+1   ) - vely(i,j-1   )) &
                + b2*(vely(i,j+2   ) - vely(i,j-2   )) &
-               + b3*(vely(i,j+3   ) - vely(i,j-3   )) &
-               + b4*(vely(i,j+4   ) - vely(i,j-4   )) )
+               + b3*(vely(i,j+3   ) - vely(i,j-3   )) )
        
        gwj   = ( b1*(velz(i,j+1   ) - velz(i,j-1   )) &
                + b2*(velz(i,j+2   ) - velz(i,j-2   )) &
-               + b3*(velz(i,j+3   ) - velz(i,j-3   )) &
-               + b4*(velz(i,j+4   ) - velz(i,j-4   )) )
+               + b3*(velz(i,j+3   ) - velz(i,j-3   )) )
 
        
 #include "geom/dxdy.F"

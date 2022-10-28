@@ -96,13 +96,11 @@
     fvrov1 =          mmu*(     uy +     vx        )    
     fvrow1 =          mmu*(                    wx  )    
     fvroe1 = (lambda*tx + uu*fvrou1 + vv*fvrov1 + ww * fvrow1) 
-    ! fvroe1 = (lambda*tx + uu*fvrou1 + vv*fvrov1) 
     !
     gvrou1 =          mmu*(     uy +     vx        )
     gvrov1 = TWOTHIRD*mmu*(    -ux + TWO*vy        )
     gvrow1 =          mmu*(                    wy  )    
-    gvroe1 = (lambda*ty + uu*gvrou1 + vv*gvrov1 + ww * gvrow1)
-    ! gvroe1 = (lambda*ty + uu*gvrou1 + vv*gvrov1)
+    gvroe1 = lambda*ty + uu*gvrou1 + vv*gvrov1 + ww * gvrow1
     
     
     !!  fvrou1 = TWOTHIRD*mmu*( TWO*ux -     vy  -   wz  )    

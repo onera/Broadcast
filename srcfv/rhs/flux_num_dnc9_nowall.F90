@@ -1,4 +1,4 @@
-! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
+! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/
 
 ! =============================================================================
 !          consistent fluxes for DNC9 2D
@@ -87,12 +87,17 @@ subroutine flux_num_dnc9_nowall_2d(residu,w,x0,y0,nx,ny,xc,yc,vol,volf,gh,cp,cv,
     !
   
   ! Coef for grad o10
-  b1 =  5.d0/6.d0
-  b2 = -5.d0/21.d0
-  b3 =  5.d0/84.d0
-  b4 = -5.d0/504.d0
-  b5 =  1.d0/1260.d0
-  
+  ! b1 =  5.d0/6.d0
+  ! b2 = -5.d0/21.d0
+  ! b3 =  5.d0/84.d0
+  ! b4 = -5.d0/504.d0
+  ! b5 =  1.d0/1260.d0
+  denom = 1.d0/840.d0
+  !Coef for grad o8
+  b1 =  672.d0 * denom! 4.d0/5.d0
+  b2 = -168.d0 * denom!-1.d0/5.d0
+  b3 =  32.d0  * denom! 4.d0/105.d0
+  b4 = - 3.d0  * denom!-1.d0/280.d0
   !expression for FV
   ! c5 = a5
   ! c4 = c5 + a4
@@ -127,8 +132,8 @@ subroutine flux_num_dnc9_nowall_2d(residu,w,x0,y0,nx,ny,xc,yc,vol,volf,gh,cp,cv,
 !$AD II-LOOP
 !DIR$ IVDEP      
   do i = 1, im
-#include "rhs/gradop_11pi.F"
-#include "rhs/gradop_11pj.F"
+#include "rhs/gradop_9pi.F"
+#include "rhs/gradop_9pj.F"
 #include "rhs/gradient.F"
   enddo
   enddo
