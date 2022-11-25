@@ -66,7 +66,7 @@ subroutine flux_num_dnc9_polar_2d(residu,w,ym,x0,y0,nx,ny,xc,yc,vol,volf,gh,cp,c
   real(8) :: src1,src2,src3,src4,src5
   real(8) :: srce1,srce2,srce3,srce4,srce5
   real(8) :: srcv1,srcv2,srcv3,srcv4,srcv5
-  real(8) :: t_xy, t_yy, t_yz  
+  real(8) :: t_xy, t_yy, t_yz , t_zz 
   real(8) :: mach2,alpha,vn2,cprim
   ! -----------------------------------------------------------------
   !

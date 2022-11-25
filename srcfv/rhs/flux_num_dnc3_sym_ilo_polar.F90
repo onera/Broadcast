@@ -4,8 +4,8 @@
 !          consistent fluxes for DNC3 2D
 ! =============================================================================
 !
-subroutine flux_num_dnc3_nowall_polar_2d(residu,w,ym,x0,y0,nx,ny,xc,yc,vol,volf,gh,cp,cv,prandtl,&
-                            gam,rgaz,cs,muref,tref,s_suth,k2,k4,im,jm)
+subroutine flux_num_dnc3_sym_ilo_polar_2d(residu,w,ym,x0,y0,nx,ny,xc,yc,vol,volf,gh,cp,cv,prandtl,&
+                                          gam,rgaz,cs,muref,tref,s_suth,k2,k4,im,jm)
   !
   implicit none
   ! variables for dimension -----------------------------------------
@@ -37,7 +37,7 @@ subroutine flux_num_dnc3_nowall_polar_2d(residu,w,ym,x0,y0,nx,ny,xc,yc,vol,volf,
   real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh     , 2) :: gradu,gradv,gradw,gradmu
   real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh     , 2) :: grad_rho,grad_temp
   real(8),dimension(5)    :: deltar,deltal,t
-  integer :: i,j,h
+  integer :: i,j,h,i0,j0
   real(8) :: nx_N, nx_S, nx_E, nx_O, volm1, ux,vx,wx,tx
   real(8) :: ny_N, ny_S, ny_E, ny_O, uy,vy,wy,ty
   real(8) :: val_N, val_S, val_E, val_O
@@ -66,6 +66,7 @@ subroutine flux_num_dnc3_nowall_polar_2d(residu,w,ym,x0,y0,nx,ny,xc,yc,vol,volf,
   real(8) :: srcv1,srcv2,srcv3,srcv4,srcv5
   real(8) :: t_xy, t_yy, t_yz, t_zz 
   real(8) :: mach2,alpha,vn2,cprim
+  real(8) :: rosym,musym,velxsym,tsym, velysym
   ! -----------------------------------------------------------------
   !
   HALF     = 0.5d0
@@ -80,6 +81,10 @@ subroutine flux_num_dnc3_nowall_polar_2d(residu,w,ym,x0,y0,nx,ny,xc,yc,vol,volf,
   
   cpprandtl = cp/prandtl
   cvm1      = ONE/cv 
+  
+  ! increment pour axisym
+  i0 = 1
+  j0 = 0
   
   ! k2 = 1.d0 
   ! k4 = 1.d0/12d0 already in coef for predictor 
@@ -132,15 +137,51 @@ subroutine flux_num_dnc3_nowall_polar_2d(residu,w,ym,x0,y0,nx,ny,xc,yc,vol,volf,
 #include "rhs/primvisc.F"  
   
   ! Work on interior domain minus one cell
-!$AD II-LOOP  
+  
+  ! force dp/dn = 0. at 2nd oder
+  ct0 = 1.125d0! 9/8
+  ct1 =-0.125d0!-1/8
+  
+  ! force dp/dn = 0. at 3rd oder
+  ! ct0 = 225.d0/184.d0
+  ! ct1 = -25.d0/92.d0
+  ! ct2 = 9.d0/184.d0
+  
+  c3d0 = HALF
+  c3d1 = HALF
+  
+!$AD II-LOOP
   do j = 1, jm
 !$AD II-LOOP
 !DIR$ IVDEP            
-  do i = 1, im
+  do i = 2, im
 #include "rhs/gradop_prim_3pi.F"
 #include "rhs/gradop_prim_3pj.F"
 #include "rhs/gradient_prim.F"
   enddo
+  !axisym at i = 1/2
+  i=1
+  !impose d(var)/dr = 0
+  rosym   = ct0*   w(i,j  ,1) +&
+            ct1*   w(i+1,j,1)
+  tsym    = ct0*tloc(i,j    ) +&
+            ct1*tloc(i+1,j  )
+  musym   = ct0*  mu(i,j    ) +&
+            ct1*  mu(i+1,j  )
+  velxsym = ct0*velx(i,j    ) +&
+            ct1*velx(i+1,j  )
+  velysym = ZERO
+            
+  grhoi = HALF*(w(   i+1,j,1) + w(   i,j,1)) - rosym
+  gui   = HALF*(velx(i+1,j  ) + velx(i,j  )) - velxsym
+  gvi   = HALF*(vely(i+1,j  ) + vely(i,j  )) - velysym
+  gwi   = 0.d0
+  gti   = HALF*(tloc(i+1,j  ) + tloc(i,j  )) - tsym
+  gmui  = HALF*(  mu(i+1,j  ) +   mu(i,j  )) - musym
+  
+#include "rhs/gradop_prim_3pj.F"
+#include "rhs/gradient_prim.F"
+
   enddo
   
   
@@ -151,10 +192,10 @@ subroutine flux_num_dnc3_nowall_polar_2d(residu,w,ym,x0,y0,nx,ny,xc,yc,vol,volf,
   ! do i = 1 , im + 1
   ! nbjb = 11 
 !$AD II-LOOP
-  do j = 1, jm+1
-!$AD II-LOOP
+  do j = 3, jm+1
 !DIR$ IVDEP            
-  do i = 1 , im + 1
+!$AD II-LOOP
+  do i = 3 , im + 1
     !
 #include "rhs/euler_o4.F"  
 #include "rhs/predictor_5p.F"
@@ -165,13 +206,106 @@ subroutine flux_num_dnc3_nowall_polar_2d(residu,w,ym,x0,y0,nx,ny,xc,yc,vol,volf,
 #include "rhs/fluxnumassembly_j.F"
     !
   enddo
+  i = 2
+#include "rhs/nearbndfluxes3demi_5pi.F"  
+#include "rhs/euler_o4_j.F"
+#include "rhs/predictor_5p.F"
+#include "rhs/flux_visqueux_polar_o2_i.F"
+#include "rhs/flux_visqueux_polar_o2_j.F"
+#include "rhs/dissipation_ducros.F"
+#include "rhs/fluxnumassembly_i.F"
+#include "rhs/fluxnumassembly_j.F"
+  
+  i=1
+#include "rhs/euler_o4_j.F"
+#include "rhs/predictor_5p_j.F"
+#include "rhs/flux_visqueux_polar_o2_j.F"
+#include "rhs/dissipation_ducros_j.F"
+#include "rhs/fluxnumassembly_j.F"  
+#include "rhs/fluxsymilo_polar.F"   
+  
   enddo
+  
+  
+  ! Manage Wall Fluxes
+   ! force dp/dn = 0. at 2nd oder
+  ! ct0 = 1.125d0! 9/8
+  ! ct1 =-0.125d0!-1/8
+  
+  ! force dp/dn = 0. at 3rd oder
+  ! ct0 = 225.d0/184.d0
+  ! ct1 = -25.d0/92.d0
+  ! ct2 = 9.d0/184.d0
+  ! coef for near wall off-centered fluxes
+! #include rhs/coefnearbnd_5p
+  ! c3d0 = HALF
+  ! c3d1 = HALF
+   ! off centered schemes for fluxes near wall
+      
+  j = 2       
+!$AD II-LOOP
+!DIR$ IVDEP            
+  do i = 3,im+1
+    
+#include "rhs/euler_o4_i.F"  
+#include "rhs/nearbndfluxes3demi_5p.F"
+#include "rhs/predictor_5p.F"
+#include "rhs/flux_visqueux_polar_o2_i.F"
+#include "rhs/flux_visqueux_polar_o2_j.F"
+#include "rhs/dissipation_ducros.F"    
+#include "rhs/fluxnumassembly_i.F"
+#include "rhs/fluxnumassembly_j.F"
+                                                           
+  enddo
+  i = 2
+#include "rhs/nearbndfluxes3demi_5pi.F"  
+#include "rhs/nearbndfluxes3demi_5p.F"
+#include "rhs/predictor_5p.F"
+#include "rhs/flux_visqueux_polar_o2_i.F"
+#include "rhs/flux_visqueux_polar_o2_j.F"
+#include "rhs/dissipation_ducros.F"
+#include "rhs/fluxnumassembly_i.F"
+#include "rhs/fluxnumassembly_j.F"
+  
+  i=1
+#include "rhs/nearbndfluxes3demi_5p.F"
+#include "rhs/predictor_5p_j.F"
+#include "rhs/flux_visqueux_polar_o2_j.F"
+#include "rhs/dissipation_ducros_j.F"
+#include "rhs/fluxnumassembly_j.F"  
+#include "rhs/fluxsymilo_polar.F"   
+  
+  
+  j = 1
+!$AD II-LOOP
+!DIR$ IVDEP            
+  do i = 3,im+1
+    ! for idir (only works for infinite Wall)   
+#include "rhs/euler_o4_i.F"
+#include "rhs/predictor_5p_i.F"
+#include "rhs/flux_visqueux_polar_o2_i.F"
+#include "rhs/dissipation_ducros_i.F" 
+#include "rhs/fluxnumassembly_i.F"
+#include "rhs/fluxwall_polar.F"   
+
+  enddo    
+    
+  i = 2
+#include "rhs/nearbndfluxes3demi_5pi.F"  
+#include "rhs/predictor_5p_i.F"
+#include "rhs/flux_visqueux_polar_o2_i.F"
+#include "rhs/dissipation_ducros_i.F"
+#include "rhs/fluxnumassembly_i.F"
+#include "rhs/fluxwall_polar.F"   
    
+  i=1
+#include "rhs/fluxsymilo_polar.F"  
+#include "rhs/fluxwall_polar.F"   
   
   ! fluxes balance
 #include "rhs/balance_polar.F"
 
 
-end subroutine flux_num_dnc3_nowall_polar_2d
+end subroutine flux_num_dnc3_sym_ilo_polar_2d
 !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
