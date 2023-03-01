@@ -1,4 +1,135 @@
-! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+subroutine testvector_poisson(wd,l,k,gh,im,jm)
+  !
+  implicit none
+  ! variables for dimension -----------------------------------------
+  integer, intent(in):: im,jm,gh,l,k
+  ! Returned objects ------------------------------------------------
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh    ),intent(inout) :: wd
+  ! Non-required arguments -------------------------------------------
+  integer :: stepj,i,j  
+  stepj = 1+2*gh
+  wd = 0.d0
+  do j = k+1, jm, stepj
+!DIR$ IVDEP  
+  do i = l+1, im, stepj
+    wd(i, j) = 1.d0
+  enddo
+  enddo
+end subroutine testvector_poisson
+
+subroutine computejacobianfromjv_poisson_norelax(jac,ia,ja,resd,l,k,gh,im,jm,nbentry)
+  !
+  implicit none
+  ! variables for dimension -----------------------------------------
+  integer, intent(in) :: im,jm,gh,nbentry,l,k
+  ! required arguments ----------------------------------------------
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh),intent(in) :: resd
+  ! Returned objects ------------------------------------------------
+  integer,dimension(nbentry),intent(inout) :: ia
+  integer,dimension(nbentry),intent(inout) :: ja
+  real(8),dimension(nbentry),intent(inout) :: jac
+  ! Non-required arguments -------------------------------------------
+  integer :: stepj,i,j,e,ii,jj, current, vali, valj
+  stepj = 1+2*gh
+  do j = 1, jm
+!DIR$ IVDEP  
+  do i = 1, im
+    !
+    current = (i-1) + (j-1) * im + k * im*jm + l * im*jm*stepj
+
+    ia(current +1)  = (j-1)  + (i-1) * jm
+
+    if (j <= k+1 + gh) then
+      valj = k
+    else
+      valj = (j-gh - (k+1) + 2*gh) / stepj * stepj + k
+    endif
+
+    if (valj >= jm) then
+      ia(current +1)  = im*jm -1
+      ja(current +1)  = 0
+      jac(current +1) = 0.d0
+    else  
+      if (l <= gh) then
+        if (i <= l+1 + gh) then
+          vali = l 
+        else
+          vali = (i - (l+1) + gh) / stepj * stepj + l
+        endif   
+      else
+        if (i <= l - gh) then
+          vali = im+1
+          ! vali = (i - (l+1) + gh) / stepj * stepj + l
+        else
+          vali = (i - (l+1) + gh) / stepj * stepj + l
+        endif
+      endif    
+      if (vali >= im) then
+        ia(current +1)  = im*jm -1
+        ja(current +1)  = 0
+        jac(current +1) = 0.d0
+      else
+        ja(current +1)  = valj + vali * jm
+        jac(current +1) = resd(i , j)
+        ! jac(current +1) = 1.d0
+      endif  
+    endif    
+    
+  enddo
+  enddo
+end subroutine computejacobianfromjv_poisson_norelax
+
+subroutine testvector_dchu(wd,m,gh,im,jm)
+  !
+  implicit none
+  ! variables for dimension -----------------------------------------
+  integer, intent(in):: im,jm,gh,m
+  ! Returned objects ------------------------------------------------
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh  , 5   ),intent(inout) :: wd
+  ! Non-required arguments -------------------------------------------
+  integer :: i,j  
+  wd = 0.d0
+  do j = 1, jm
+!DIR$ IVDEP  
+  do i = 1, im
+    wd(i, j, m+1) = 1.d0
+  enddo
+  enddo
+end subroutine testvector_dchu
+
+subroutine computederivativechufromjv(jac,ia,ja,resd,m,gh,im,jm,nbentry)
+  !
+  implicit none
+  ! variables for dimension -----------------------------------------
+  integer, intent(in) :: im,jm,gh,nbentry,m
+  ! required arguments ----------------------------------------------
+  real(8),dimension(1:im  ,1:jm  , 5   ),intent(in) :: resd
+  ! Returned objects ------------------------------------------------
+  integer,dimension(nbentry),intent(inout) :: ia
+  integer,dimension(nbentry),intent(inout) :: ja
+  real(8),dimension(nbentry),intent(inout) :: jac
+  ! Non-required arguments -------------------------------------------
+  integer :: stepj,i,j,e,ii,jj, current, vali, valj
+  stepj = 1+2*gh
+  do e = 1,5
+  ! do j = 1 + gh, jm
+  do j = 1, jm
+!DIR$ IVDEP  
+  do i = 1, im
+    !
+    current = (i-1) + (j-1) * im + (e-1) * im*jm + m * im*jm*5
+
+    ia(current +1)  = e-1 + (j-1) * 5 + (i-1) * jm*5
+
+    ja(current +1)  = m + (j-1) * 5 + (i-1) * jm*5
+    jac(current +1) = resd(i , j, e)
+    ! jac(current +1) = 1.d0
+
+  enddo
+  enddo
+  enddo
+end subroutine computederivativechufromjv
 
 subroutine testvector_twall(twallprofd,m,gh,im)
   !
@@ -11,6 +142,18 @@ subroutine testvector_twall(twallprofd,m,gh,im)
   twallprofd = 0.d0
   twallprofd(m+1) = 1.d0
 end subroutine testvector_twall
+
+subroutine testvector_twall_short(twallprofd,m,istart,iend)
+  !
+  implicit none
+  ! variables for dimension -----------------------------------------
+  integer, intent(in):: istart,iend,m
+  ! Returned objects ------------------------------------------------
+  real(8),dimension(istart:iend),intent(inout) :: twallprofd
+  ! Non-required arguments -------------------------------------------
+  twallprofd = 0.d0
+  twallprofd(m) = 1.d0
+end subroutine testvector_twall_short
 
 subroutine computejacobian_twall(jac,ia,ja,resd,m,gh,im,jm,nbentry,vol)
   !

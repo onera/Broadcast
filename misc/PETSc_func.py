@@ -1,4 +1,3 @@
-# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 ### A few PETSc functions
 # Slightly modified from S. Beneddine & M. Lugrin
@@ -79,7 +78,7 @@ def createMatPetscCSR(Imat,Jmat,Amat,ni,nj,nnz,comm=PETSc.COMM_WORLD.tompi4py())
     A.setSizes([ni,nj])
     A.setUp()
     A.setOption(A.Option.ROW_ORIENTED,False)
-    # A.setOption(A.Option.NEW_NONZERO_ALLOCATION_ERR,False)
+    A.setOption(A.Option.NEW_NONZERO_ALLOCATION_ERR,False)
     A.setType('mpiaij')
     A.setPreallocationNNZ((nnz,nnz))
     #passe par le format CSR via scipy pour ranger correctement
@@ -150,6 +149,64 @@ def kspLUPetsc(A, comm=PETSc.COMM_WORLD):
   ksp.setFromOptions()
   # ksp.setUp()
   #ksp.getPC().setMumpsIcntl(7, 3)
+  return ksp
+
+def kspILUPetsc(A, comm=PETSc.COMM_WORLD):
+  ksp = PETSc.KSP()
+  ksp.create(comm)
+  # ksp.cancelMonitor()
+  ksp.setType('preonly')
+  ksp.getPC().setType('ilu')
+  # ksp.getPC().setFactorLevels(0)
+  if A is not None:
+    ksp.setOperators(A)
+  ksp.setFromOptions()
+  return ksp
+
+def kspGMRESplusILUPetsc(A, comm=PETSc.COMM_WORLD):
+  ksp = PETSc.KSP()
+  ksp.create(comm)
+  # ksp.cancelMonitor()
+  ksp.setType('fgmres')
+  ksp.setGMRESRestart(300)
+  # ksp.setTolerances(rtol=1.e-2, max_it=300)
+  # ksp.setTolerances(rtol=0.5, max_it=300)
+  ksp.setTolerances(rtol=1.e-4, max_it=300)
+  # ksp.setTolerances(rtol=1.e-8, max_it=300)
+  # ksp.setOptionsPrefix("gmresin_")
+  ## 
+  ksp.getPC().setType('ilu')
+  # ksp.getPC().setFactorSolverType('superlu') # superlu not installed 
+  ksp.getPC().setFactorLevels(0)
+  ## Or with nested GMRES
+  # ksp.getPC().setType('ksp')
+  # kspInner = ksp.getPC().getKSP()
+  # kspInner.setType('fgmres')
+  # ksp.setGMRESRestart(500)
+  # kspInner.setTolerances(rtol=1.e-2, max_it=10)
+  # kspInner.setOptionsPrefix("gmresin2_")
+  # kspInner.getPC().setType('ilu')
+  # kspInner.getPC().setFactorLevels(1)
+  ## 
+  if A is not None:
+    ksp.setOperators(A)
+  ksp.setFromOptions()
+  return ksp
+
+def kspGMRESplusLUPetsc(A, comm=PETSc.COMM_WORLD):
+  ksp = PETSc.KSP()
+  ksp.create(comm)
+  # ksp.cancelMonitor()
+  ksp.setType('fgmres')
+  ksp.setGMRESRestart(300)
+  ksp.setTolerances(rtol=1.e-4, max_it=50)
+  # ksp.setOptionsPrefix("gmresin_")
+  ## 
+  ksp.getPC().setType('lu')
+  ksp.getPC().setFactorSolverType('mumps') 
+  if A is not None:
+    ksp.setOperators(A)
+  ksp.setFromOptions()
   return ksp
 
 def kspASMPetsc(A, A2):
@@ -266,6 +323,31 @@ class mon_operateur_P(object) :
         # self.P.multTranspose(self.H,Y)
         self.P.multTranspose(self.G,Y)
 
+class mon_operateur_P_control(object) :
+    def __init__(self,ksp_R,Qq,Qvolinv,P,dRdp,D,E,F,G,H,K): #plus vraiment besoin de Qvol maintenant
+        self.ksp_R = ksp_R
+        self.Qq=Qq
+        self.Qvolinv=Qvolinv
+        self.P=P
+        self.dRdp=dRdp
+        self.D=D
+        self.E=E
+        self.F=F
+        self.G=G
+        self.H=H
+        self.K=K
+    #mult est remplace par la resolution du systeme correspondant
+    def mult(self, mat, X, Y):
+        self.P.mult(X,self.D)
+        self.dRdp.mult(self.D,self.E)
+        self.ksp_R.solve(self.E,self.F)
+        self.Qq.mult(self.F,self.G)
+        self.G.conjugate()
+        self.ksp_R.solveTranspose(self.G,self.H)
+        self.H.conjugate()
+        self.dRdp.multTranspose(self.H,self.K)
+        self.P.multTranspose(self.K,Y)
+
 class mon_operateur_P_diagon(object) :
     def __init__(self,ksp_R,Qq,P,Pv,Pv_inv,D,E,F,G,H,K,L,S): #plus vraiment besoin de Qvol maintenant
         self.ksp_R = ksp_R
@@ -370,8 +452,8 @@ def eigPetsc2(comm,A,Qvol2,P,nev,typeEps=SLEPc.EPS.Type.ARNOLDI,tol=1e-4,verbose
   eps = SLEPc.EPS()
   eps.create(PETSc.COMM_WORLD)
   eps.setType(typeEps)
-  # eps.setProblemType(SLEPc.EPS.ProblemType.GHEP) #GHEP pour pouvoir passer Qvol directement
-  eps.setProblemType(SLEPc.EPS.ProblemType.GNHEP)
+  eps.setProblemType(SLEPc.EPS.ProblemType.GHEP) #GHEP pour pouvoir passer Qvol directement
+  # eps.setProblemType(SLEPc.EPS.ProblemType.GNHEP)
   # eps.setProblemType(SLEPc.EPS.ProblemType.NHEP)
   # eps.setOperators(A,Qvol2.matMult(P)) 
   # eps.setOperators(A,Qvol2) #Qvol en second argument pour la norme l2
@@ -387,7 +469,7 @@ def eigPetsc2(comm,A,Qvol2,P,nev,typeEps=SLEPc.EPS.Type.ARNOLDI,tol=1e-4,verbose
   eps.setTolerances(tol=tol,max_it=maxits)
   # eps.setTolerances(tol=1.e-5,max_it=10)
   eps.setTrueResidual(True) # Do not base convergence on residual of transform eigenproblem (trough shift-invert)
-  eps.setConvergenceTest(SLEPc.EPS.Conv.ABS)
+  # eps.setConvergenceTest(SLEPc.EPS.Conv.ABS)
   eps.setFromOptions()
   Print ("   ** solving the eigenvalue problem...                         ")
   import psutil
@@ -465,6 +547,30 @@ def computeReponse2(comm, eigenvalue, eigenvector_forcage, ksp_R, P):
     # print Pf.getSizes()
     P.mult(Pf, Pf2)
     eigenvector_reponse  = OPinv(Pf2,ksp_R)
+    eigenvector_forcageP = gatherVector2ArrayPetsc(Pf2,comm,broadcast=True)
+    # eigenvector_reponse = eigenvector_forcageP
+
+    return eigenvector_reponse, eigenvector_forcageP
+
+
+def computeReponse2_control(comm, eigenvalue, eigenvector_forcage, ksp_R, P, dRdp):
+    comm.Barrier()
+    rank = comm.Get_rank()
+    eigenvector_forcage = comm.bcast(eigenvector_forcage[0], root=0)
+    Pf,Pf2 = P.getVecs()
+    x,y = dRdp.getVecs()
+    rangePf = Pf.getOwnershipRange()
+    for k in range(rangePf[0], rangePf[1]):
+        Pf[k] = eigenvector_forcage[k]
+    Pf.assemble()
+    # rangePf2 = Pf2.getOwnershipRange()
+    # for k in range(rangePf2[0], rangePf2[1]):
+    #     Pf2[k] = eigenvector_forcage[k]
+    # Pf2.assemble()
+    # print Pf.getSizes()
+    P.mult(Pf, Pf2)
+    dRdp.mult(Pf2, y)
+    eigenvector_reponse  = OPinv(y,ksp_R)
     eigenvector_forcageP = gatherVector2ArrayPetsc(Pf2,comm,broadcast=True)
     # eigenvector_reponse = eigenvector_forcageP
 
@@ -648,9 +754,13 @@ def createShellResolvent3D_1B(MAT, frequency, wavenumber, Qq, Qvol, P, Dz, Dzz):
     d.set(2. * np.pi * 1.j * frequency)
     R_inv.setDiagonal(d,PETSc.InsertMode.ADD_VALUES)
        #pour solve  
-    R_inv2 = R_inv + wavenumber**2 * Dzz - wavenumber * 1.j * Dz
+    R_inv2 = R_inv + wavenumber**2 * Dzz - wavenumber * 1.j * Dz #good
     # R_inv2 = R_inv - wavenumber**2 * Dzz + wavenumber * 1.j * Dz
+    ## Direct
     ksp_R=kspLUPetsc(R_inv2)
+    ## Or inner GMRES
+    # ksp_R=kspGMRESplusLUPetsc(R_inv2)
+    ##
        #Definition de la matrice shell :
     D,E=R_inv2.createVecs()
     F,G=R_inv2.createVecs()
@@ -667,6 +777,42 @@ def createShellResolvent3D_1B(MAT, frequency, wavenumber, Qq, Qvol, P, Dz, Dzz):
     A.setUp()
 
     return A,ksp_R    
+
+def createShellResolvent3D_1B_control(MAT, frequency, wavenumber, Qq, Qvol, P, Dz, Dzz, dRdp): #Qvol est plus utilise avec la nouvelle methode
+        #(Iw-J)
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    R_inv=-MAT
+    # R_inv= MAT
+    R_inv.setOption(R_inv.Option.NEW_NONZERO_ALLOCATION_ERR, False)
+    l,d=MAT.getVecs()
+    d.set(2. * np.pi * 1.j * frequency)
+    R_inv.setDiagonal(d,PETSc.InsertMode.ADD_VALUES)
+       #pour solve  
+    R_inv2 = R_inv + wavenumber**2 * Dzz - wavenumber * 1.j * Dz #good
+    # R_inv2 = R_inv - wavenumber**2 * Dzz + wavenumber * 1.j * Dz
+    ## Direct
+    ksp_R=kspLUPetsc(R_inv2)
+    ## Or inner GMRES
+    # ksp_R=kspGMRESplusLUPetsc(R_inv2)
+    ##
+       #Definition de la matrice shell :
+    D,DD=dRdp.createVecs()
+    K,KK=dRdp.createVecs()
+    F,G=R_inv2.createVecs()
+    H,E=R_inv2.createVecs()
+    # L,S=R_inv2.createVecs()
+    pde=mon_operateur_P_control(ksp_R,Qq,Qvol,P,dRdp,D,E,F,G,H,K) #D,E,F sont juste la pour stocker des resultats intermediaires
+    A = PETSc.Mat().create(comm=PETSc.COMM_WORLD)
+    sizeMatj = P.getSize()[1]
+    sizeMati = P.getSize()[1]
+    # sizeMati = P.getSize()[0]
+    A.setSizes([sizeMati, sizeMatj])
+    A.setType('python')
+    A.setPythonContext(pde)
+    A.setUp()
+
+    return A,ksp_R  
 
 def communicateIAsquare(arr, comm, start=0, IA=False):
   ''' gather from rank 1 to rank 0 then send a copy of the complete information stored in rank 0 to rank 1, both ranks get the complete information '''
