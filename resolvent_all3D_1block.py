@@ -497,7 +497,7 @@ if __name__ == '__main__':
     os.system('mkdir -p %s' % out_dir)
 
     equations = [1, 2, 3]  #momentum
-    equations = [0, 1, 2, 3, 4]  #all equations
+    # equations = [0, 1, 2, 3, 4]  #all equations
 
     frequency = _np.array([freq]) / (2.*_np.pi) / 1.e5
     wavenumber= _np.array([wave]) / 1.e5
@@ -557,9 +557,9 @@ if __name__ == '__main__':
     P        = P.matMult(restrixP)
 
     ##  Chu norm for response and L2 norm for forcing
-    # eigenvalue, eigenvector_forcing, eigenvector_response = resolvent(frequency, wavenumber, Jacsurvol, Qq, Qvol2, Qvol2inv, P, Dz, Dzz)
+    eigenvalue, eigenvector_forcing, eigenvector_response = resolvent(frequency, wavenumber, Jacsurvol, Qq, Qvol2, Qvol2inv, P, Dz, Dzz)
     ##  Chu norm for response and forcing
-    eigenvalue, eigenvector_forcing, eigenvector_response = resolvent(frequency, wavenumber, Jacsurvol, Qq, Qq,    Qvol2inv, P, Dz, Dzz)
+    # eigenvalue, eigenvector_forcing, eigenvector_response = resolvent(frequency, wavenumber, Jacsurvol, Qq, Qq,    Qvol2inv, P, Dz, Dzz)
 
     eig = _np.sqrt(_np.real(eigenvalue))
     if rank ==0: print(eig, flush=True)
