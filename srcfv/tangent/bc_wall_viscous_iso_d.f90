@@ -6,8 +6,6 @@
 !   variations   of useful results: w
 !   with respect to varying inputs: w
 !   RW status of diff variables: w:in-out
-! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed w
-!ith this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 SUBROUTINE BC_WALL_VISCOUS_ISO_2D_D(w, wd, twall, loc, gam, rgaz, interf&
 & , gh, im, jm)
   IMPLICIT NONE
@@ -48,10 +46,10 @@ SUBROUTINE BC_WALL_VISCOUS_ISO_2D_D(w, wd, twall, loc, gam, rgaz, interf&
   jmin = interf(1, 2)
   imax = interf(2, 1)
   jmax = interf(2, 2)
-! write(200,*) loc, 'imin = ', interf(1,1)
-! write(200,*) loc, 'jmin = ', interf(1,2)
-! write(200,*) loc, 'imax = ', interf(2,1)
-! write(200,*) loc, 'jmax = ', interf(2,2)
+!   write(200,*) loc, 'imin = ', interf(1,1)
+!   write(200,*) loc, 'jmin = ', interf(1,2)
+!   write(200,*) loc, 'imax = ', interf(2,1)
+!   write(200,*) loc, 'jmax = ', interf(2,2)
   i0 = 0
   j0 = 0
   lmin = 1
@@ -127,7 +125,7 @@ SUBROUTINE BC_WALL_VISCOUS_ISO_2D_D(w, wd, twall, loc, gam, rgaz, interf&
 ! roi = pw / (rgaz * twall)
     roid = two*pwd/(rgaz*twall) - roed
     roi = two*pw/(rgaz*twall) - roe
-! pi = pw
+! pi  = pw
     pid = third*(four*pwd-ped)
     pi = third*(four*pw-pe)
 ! roi = (pi/pe*roe**gam )**gami
@@ -143,8 +141,8 @@ SUBROUTINE BC_WALL_VISCOUS_ISO_2D_D(w, wd, twall, loc, gam, rgaz, interf&
     wi = -we
 !
 ! roi = roe
-! pi = pe
-! roiei = pi/gam1 + HALF*roi*(ui*ui+vi*vi+wi*wi)
+! pi  = pe
+! roiei  = pi/gam1 + HALF*roi*(ui*ui+vi*vi+wi*wi)
     DO de=1,gh
       wd(i-de*i0, j-de*j0, 1) = roid
       w(i-de*i0, j-de*j0, 1) = roi
@@ -159,7 +157,7 @@ SUBROUTINE BC_WALL_VISCOUS_ISO_2D_D(w, wd, twall, loc, gam, rgaz, interf&
 &       *vi*vid+2*wi*wid))
       w(i-de*i0, j-de*j0, 5) = roiei + half*(roi*temp)
 !
-! roi = w(i+de*i0,j+de*j0,1)
+! roi   = w(i+de*i0,j+de*j0,1)
 ! roem1 = ONE/roi
       da = de - 1
       roid = two*wd(i-de*i0, j-de*j0, 1) - wd(i-da*i0, j-da*j0, 1)
@@ -176,7 +174,7 @@ SUBROUTINE BC_WALL_VISCOUS_ISO_2D_D(w, wd, twall, loc, gam, rgaz, interf&
       temp = w(i+de*i0, j+de*j0, 4)
       we1d = roem1*wd(i+de*i0, j+de*j0, 4) + temp*roem1d
       we1 = temp*roem1
-! ve21 = ue1*ue1 + ve1*ve1 + we1*we1
+! ve21  = ue1*ue1 + ve1*ve1 + we1*we1
 ! roiei = w(i+de*i0,j+de*j0,5)
       uid = -ue1d
       ui = -ue1

@@ -1,4 +1,3 @@
-! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 subroutine bc_wall_blow_profile_2d(w,velprof,loc,gam,interf,gh,im,jm,lm)
   !
   implicit none

@@ -11,9 +11,9 @@ mpirun -np 1 python3 compile_lhs.py &
 mpirun -np 1 python3 compile_tangent.py &
 mpirun -np 1 python3 compile_hessian.py &
 mpirun -np 1 python3 compile_adj.py &
+mpirun -np 1 python3 compile_chu.py &
+mpirun -np 1 python3 compile_tangentchu.py &
 #mpirun -np 1 python3 compile_costf.py &
 #mpirun -np 1 python3 compile_tangentcostf.py &
-#mpirun -np 1 python3 compile_chu.py &
-#mpirun -np 1 python3 compile_tangentchu.py &
 #mpirun -np 1 python3 compile_poisson.py
 

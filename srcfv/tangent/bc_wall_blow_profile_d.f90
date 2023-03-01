@@ -6,8 +6,6 @@
 !   variations   of useful results: w
 !   with respect to varying inputs: w velprof gam
 !   RW status of diff variables: w:in-out velprof:in gam:in
-! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed w
-!ith this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 SUBROUTINE BC_WALL_BLOW_PROFILE_2D_D(w, wd, velprof, velprofd, loc, gam&
 & , gamd, interf, gh, im, jm, lm)
   IMPLICIT NONE
@@ -53,10 +51,10 @@ SUBROUTINE BC_WALL_BLOW_PROFILE_2D_D(w, wd, velprof, velprofd, loc, gam&
   jmin = interf(1, 2)
   imax = interf(2, 1)
   jmax = interf(2, 2)
-! write(200,*) loc, 'imin = ', interf(1,1)
-! write(200,*) loc, 'jmin = ', interf(1,2)
-! write(200,*) loc, 'imax = ', interf(2,1)
-! write(200,*) loc, 'jmax = ', interf(2,2)
+!   write(200,*) loc, 'imin = ', interf(1,1)
+!   write(200,*) loc, 'jmin = ', interf(1,2)
+!   write(200,*) loc, 'imax = ', interf(2,1)
+!   write(200,*) loc, 'jmax = ', interf(2,2)
   i0 = 0
   j0 = 0
   lmin = 1
@@ -105,7 +103,7 @@ SUBROUTINE BC_WALL_BLOW_PROFILE_2D_D(w, wd, velprof, velprofd, loc, gam&
     we = w(i, j, 4)*roem1
     ve2d = 2*ue*ued + 2*ve*ved + 2*we*wed
     ve2 = ue*ue + ve*ve + we*we
-! pe = gam1 * (w(i+i0,j+j0,5) - HALF*roe*ve2)
+! pe    = gam1 * (w(i+i0,j+j0,5) - HALF*roe*ve2)
     temp = w(i, j, 5) - half*roe*ve2
     ped = temp*gam1d + gam1*(wd(i, j, 5)-half*(ve2*roed+roe*ve2d))
     pe = gam1*temp
@@ -137,7 +135,7 @@ SUBROUTINE BC_WALL_BLOW_PROFILE_2D_D(w, wd, velprof, velprofd, loc, gam&
 ! ???
     pid = third*(four*pwd-ped)
     pi = third*(four*pw-pe)
-! pi = pe
+! pi  = pe
 ! roi = (pe*roe**gam / pi)**gami
     temp = roe**gam
     IF (roe .LE. 0.0 .AND. (gam .EQ. 0.0 .OR. gam .NE. INT(gam))) THEN
