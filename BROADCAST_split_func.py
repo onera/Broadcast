@@ -1,4 +1,3 @@
-# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #!/usr/bin/env python
 
 '''
@@ -18,8 +17,11 @@ import srcfv.f_bnd     as f_bnd
 import srcfv.f_sch     as f_sch
 import srcfv.f_lhs     as f_lhs
 import srcfv.f_lin     as f_lin
-import srcfv.f_adj     as f_adj
+# import srcfv.f_adj     as f_adj
 import srcfv.f_norm    as f_norm
+import srcfv.f_dz      as f_dz
+import srcfv.f_lindz   as f_lindz
+# import srcfv.f_adjdz   as f_adjdz
 # FROM A.POULAIN Thesis
 import misc.f_misc     as f_misc
 import misc.PETSc_func as pet
@@ -448,25 +450,28 @@ def read_lflin(lflin):
 
     return   flininflow, flinoutflow, flinnoref, flinwall, flinsch
 
-def updatefromBC(w, wbd, field, nx, ny, gam, im, jm, gh, interf1, interf2, interf3, interf4, finflow=None, foutflow=None, fnoref=None, fwall=None, fjn=None, prr1=None, prr2=None, prd1=None, prd2=None, tr1=None, tr2=None, pinf=None):
+def updatefromBC(w, wbd, field, nx, ny, gam, rgaz, im, jm, gh, interf1, interf2, interf3, interf4, wallprof=None, compBC=True, finflow=None, foutflow=None, fnoref=None, fwall=None, fjn=None, prr1=None, prr2=None, prd1=None, prd2=None, tr1=None, tr2=None, pinf=None):
     ''' Update the state w from the BC '''
     
     # finflow(w,'Ilo', interf1, field,im,jm)          
     finflow(w,'Ilo',interf1,field,nx,ny,gam,im,jm)
     fnoref(w,wbd,'Jhi',interf4,nx,ny,gam,gh,im,jm)
-    # foutflow(w,'Ihi', interf2, im, jm, gh)
-    foutflow(w,'Ihi',interf2,pinf,True,gam,nx,ny,im,jm,gh)
-    fwall(w,'Jlo', gam, interf3, gh, im, jm)
-
-    ## CYL
-    # fnoref(w,wbd,'Jhi',interf2,nx,ny,gam,gh,im,jm)
-    # fwall(w,'Jlo', gam, interf1, gh, im, jm)
-    # fjn(w,prr1,gh,gh,gh,gh,im,jm,w,prd2,gh,gh,gh,gh,im,jm,tr1)
-    # fjn(w,prr2,gh,gh,gh,gh,im,jm,w,prd1,gh,gh,gh,gh,im,jm,tr2)
+    if compBC:
+        foutflow(w,'Ihi', interf2, im, jm, gh)
+    else:
+        # foutflow(w,'Ihi',interf2,pinf,True,gam,nx,ny,im,jm,gh)
+        foutflow(w,'Ihi',interf2,pinf,1.,gam,nx,ny,im,jm,gh)
+        # foutflow(w,'Ihi',interf2,pinf,0.1,gam,nx,ny,im,jm,gh)
+    # fwall(w,'Jlo', gam, interf3, gh, im, jm)
+    if wallprof is None:
+        fwall(w,'Jlo', gam, interf3, gh, im, jm)
+    else:
+        fwall(w, wallprof, 'Jlo', gam, rgaz, interf3, gh, im, jm)  #isothermal
+        # fwall(w, wallprof, 'Jlo', gam, interf3, gh, im, jm)  #blowing
 
     return w
 
-def updatefromBC_cyl(w, wbd, field, nx, ny, gam, im, jm, gh, interf1, interf2, interf3, interf4, finflow=None, foutflow=None, fnoref=None, fwall=None, fjn=None, prr1=None, prr2=None, prd1=None, prd2=None, tr1=None, tr2=None):
+def updatefromBC_cyl(w, wbd, field, nx, ny, gam, rgaz, im, jm, gh, interf1, interf2, interf3, interf4, finflow=None, foutflow=None, fnoref=None, fwall=None, fjn=None, prr1=None, prr2=None, prd1=None, prd2=None, tr1=None, tr2=None):
     ''' Update the state w from the BC '''
 
     ## CYL
@@ -475,12 +480,113 @@ def updatefromBC_cyl(w, wbd, field, nx, ny, gam, im, jm, gh, interf1, interf2, i
     fjn(w,prr1,gh,gh,gh,gh,im,jm,w,prd2,gh,gh,gh,gh,im,jm,tr1)
     fjn(w,prr2,gh,gh,gh,gh,im,jm,w,prd1,gh,gh,gh,gh,im,jm,tr2)
 
-    return w    
+    return w     
 
-def computeRes(sch, fsch, res, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None):
+def updatefromBC_lin(w, wd, wbd, field, nx, ny, gam, rgaz, im, jm, gh, interf1, interf2, interf3, interf4, wallprof=None, compBC=True, flininflow=None, flinoutflow=None, flinnoref=None, flinwall=None, finflow=None, foutflow=None, fjn=None, prr1=None, prr2=None, prd1=None, prd2=None, tr1=None, tr2=None, pinf=None):
+    ''' Update the state w from the BC '''
+
+    # w[:gh,:,:]  = 0.
+    # w[:,:gh,:]  = 0.
+    # w[-gh:,:,:] = 0.
+    # w[:,-gh:,:] = 0.
+
+    wallprofd = _np.zeros_like(wallprof)
+
+    flininflow(w,wd,'Ilo',interf1,field,nx,ny,gam,im,jm)                
+    # finflow(w,'Ilo', interf1, field,im,jm) 
+    flinnoref(w,wd,wbd,'Jhi',interf4,nx,ny,gam,gh,im,jm)
+    if compBC:
+        flinoutflow(w,wd,'Ihi', interf2, im, jm, gh)
+    else:
+        # flinoutflow(w,wd,'Ihi',interf2,pinf,True,gam,nx,ny,im,jm,gh)
+        flinoutflow(w,wd,'Ihi',interf2,pinf,1.,gam,nx,ny,im,jm,gh)
+        # flinoutflow(w,wd,'Ihi',interf2,pinf,0.1,gam,nx,ny,im,jm,gh)
+    # foutflow(w,'Ihi', interf2, im, jm, gh)
+    # flinwall(w,wd,'Jlo', gam, interf3, gh, im, jm)
+    if wallprof is None:
+        flinwall(w,wd,'Jlo', gam, interf3, gh, im, jm)
+    else:
+        flinwall(w, wd, wallprof, wallprofd, 'Jlo', gam, 0., rgaz, 0., interf3, gh, im, jm)  #isothermal
+        # flinwall(w, wd, wallprof, wallprofd, 'Jlo', gam, 0., interf3, gh, im, jm)  #blowing
+
+    return w, wd  
+
+def updatefromBC_adj(w, wd, wbd, field, nx, ny, gam, rgaz, im, jm, gh, interf1, interf2, interf3, interf4, wallprof=None, compBC=True, flininflow=None, flinoutflow=None, flinnoref=None, flinwall=None, finflow=None, foutflow=None, fjn=None, prr1=None, prr2=None, prd1=None, prd2=None, tr1=None, tr2=None, pinf=None):
+    ''' Update the state w from the BC '''
+
+    wallprofd = _np.zeros_like(wallprof)
+
+    # flinwall(w,wd,'Jlo', gam, interf3, gh, im, jm) 
+    if wallprof is None:
+        flinwall(w,wd,'Jlo', gam, interf3, gh, im, jm)
+    else:
+        flinwall(w, wd, wallprof, wallprofd, 'Jlo', gam, 0., rgaz, 0., interf3, gh, im, jm)  #isothermal
+        # flinwall(w, wd, wallprof, wallprofd, 'Jlo', gam, 0., interf3, gh, im, jm)  #blowing
+    if compBC:
+        flinoutflow(w,wd,'Ihi',interf2,im,jm,gh) 
+    else:
+        flinoutflow(w,wd,'Ihi',interf2,pinf,1.,gam,nx,ny,im,jm,gh)
+        # flinoutflow(w,wd,'Ihi',interf2,pinf,0.1,gam,nx,ny,im,jm,gh)
+    flinnoref(w,wd,wbd,'Jhi',interf4,nx,ny,gam,gh,im,jm)
+    flininflow(w,wd,'Ilo',interf1,field,nx,ny,gam,im,jm)  
+
+    # flininflow(w,wd,'Ilo',interf1,field,nx,ny,gam,im,jm) 
+    # flinnoref(w,wd,wbd,'Jhi',interf4,nx,ny,gam,gh,im,jm) 
+    # # flinoutflow(w,wd,'Ihi',interf2,im,jm,gh) 
+    # # flinoutflow(w,wd,'Ihi',interf2,pinf,True,gam,nx,ny,im,jm,gh)  
+    # flinoutflow(w,wd,'Ihi',interf2,pinf,1.,gam,nx,ny,im,jm,gh) 
+    # flinwall(w,wd,'Jlo', gam, interf3, gh, im, jm)    
+    
+    return w, wd    
+
+def updatefromBC_lin_control(w, wd, wallprof, wallprofd, wbd, field, nx, ny, gam, rgaz, im, jm, gh, interf, compBC=True, flininflow=None, flinoutflow=None, flinnoref=None, flinwall=None, finflow=None, foutflow=None, fjn=None, prr1=None, prr2=None, prd1=None, prd2=None, tr1=None, tr2=None, pinf=None):
+    ''' Update the state w from the BC '''
+
+    flinwall(w, wd, wallprof, wallprofd, 'Jlo', gam, 0., rgaz, 0., interf3, gh, im, jm)  #isothermal
+    # flinwall(w, wd, wallprof, wallprofd, 'Jlo', gam, 0., interf3, gh, im, jm)  #blowing
+
+    return w, wd  
+
+def updatefromBC_hess(w, wd, wdd, wbd, field, nx, ny, gam, im, jm, gh, interf1, interf2, interf3, interf4, flininflow=None, flinoutflow=None, flinnoref=None, flinwall=None, finflow=None, foutflow=None, fjn=None, prr1=None, prr2=None, prd1=None, prd2=None, tr1=None, tr2=None, pinf=None):
+    ''' Update the state w from the BC '''
+
+    flinwall(w,wd,wd,wdd,'Jlo', gam, interf3, gh, im, jm) 
+    flinoutflow(w,wd,wd,wdd,'Ihi',interf2,pinf,1.,gam,nx,ny,im,jm,gh)
+    flinnoref(w,wd,wd,wdd,wbd,'Jhi',interf4,nx,ny,gam,gh,im,jm)
+    flininflow(w,wd,wd,wdd,'Ilo',interf1,field,nx,ny,gam,im,jm)  
+    
+    return w, wdd   
+
+def updatefromBC_lin_cyl(w, wd, wbd, field, nx, ny, gam, im, jm, gh, interf1, interf2, interf3, interf4, flininflow=None, flinoutflow=None, flinnoref=None, flinwall=None, finflow=None, foutflow=None, fjn=None, prr1=None, prr2=None, prd1=None, prd2=None, tr1=None, tr2=None):
+    ''' Update the state w from the BC '''
+
+    ## CYL
+    flinnoref(w,wd,wbd,'Jhi',interf2,nx,ny,gam,gh,im,jm)
+    flinwall(w,wd,'Jlo', gam, interf1, gh, im, jm)
+    fjn(wd,prr1,gh,gh,gh,gh,im,jm,wd,prd2,gh,gh,gh,gh,im,jm,tr1)
+    fjn(wd,prr2,gh,gh,gh,gh,im,jm,wd,prd1,gh,gh,gh,gh,im,jm,tr2)
+    fjn(w,prr1,gh,gh,gh,gh,im,jm,w,prd2,gh,gh,gh,gh,im,jm,tr1)
+    fjn(w,prr2,gh,gh,gh,gh,im,jm,w,prd1,gh,gh,gh,gh,im,jm,tr2)
+
+    return w, wd      
+
+def computeRes(sch, fsch, res, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, sponge=False, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None, wref=None):
     ''' Compute the opposite of the residual (not divided by the volume) '''
+
+    Lmax = 1.e6  #0.3e5  #0.25e6  #0.10e6   #0.40e6   #1.e6
+    r2 = 1.    #elsA 0.2  #1.
+    r3 = 2.   #elsA 1.3  #2.
+    r4 = 0.0001    #els1 1. #0.02  #0.002  #14.  #30.  #20.  #0.0001
+    # r4 = 0.
+    sourcear = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+
     if sch == 'dnc':
-        fsch(res, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, k4, im, jm)
+        if sponge:
+            fsch(res, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, k4, im, jm, Lmax, r2, r3, r4, sourcear)
+        elif wref is not None:
+            fsch(res, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, k4, im, jm, Lmax, r3, r4, wref, sourcear)
+        else:
+            fsch(res, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, k4, im, jm)
     else:
         fsch(res, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, im, jm)
 
@@ -496,62 +602,26 @@ def computeRes_dbyvol(sch, fsch, res, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, 
     for m in range(_np.shape(res)[2]):
         res[gh:-gh,gh:-gh,m] = - res[gh:-gh,gh:-gh,m] / vol[gh:-gh,gh:-gh]
 
-    return res 
+    return res    
 
-def updatefromBC_lin(w, wd, wbd, field, nx, ny, gam, im, jm, gh, interf1, interf2, interf3, interf4, flininflow=None, flinoutflow=None, flinnoref=None, flinwall=None, finflow=None, foutflow=None, fjn=None, prr1=None, prr2=None, prd1=None, prd2=None, tr1=None, tr2=None, pinf=None):
-    ''' Update the state w from the BC '''
-
-    # w[:gh,:,:]  = 0.
-    # w[:,:gh,:]  = 0.
-    # w[-gh:,:,:] = 0.
-    # w[:,-gh:,:] = 0.
-
-    flininflow(w,wd,'Ilo',interf1,field,nx,ny,gam,im,jm)                
-    # finflow(w,'Ilo', interf1, field,im,jm) 
-    flinnoref(w,wd,wbd,'Jhi',interf4,nx,ny,gam,gh,im,jm)
-    # flinoutflow(w,wd,'Ihi', interf2, im, jm, gh)
-    flinoutflow(w,wd,'Ihi',interf2,pinf,True,gam,nx,ny,im,jm,gh)
-    # foutflow(w,'Ihi', interf2, im, jm, gh)
-    flinwall(w,wd,'Jlo', gam, interf3, gh, im, jm)
-
-    ## CYL
-    # flinnoref(w,wd,wbd,'Jhi',interf2,nx,ny,gam,gh,im,jm)
-    # flinwall(w,wd,'Jlo', gam, interf1, gh, im, jm)
-    # fjn(wd,prr1,gh,gh,gh,gh,im,jm,wd,prd2,gh,gh,gh,gh,im,jm,tr1)
-    # fjn(wd,prr2,gh,gh,gh,gh,im,jm,wd,prd1,gh,gh,gh,gh,im,jm,tr2)
-    # fjn(w,prr1,gh,gh,gh,gh,im,jm,w,prd2,gh,gh,gh,gh,im,jm,tr1)
-    # fjn(w,prr2,gh,gh,gh,gh,im,jm,w,prd1,gh,gh,gh,gh,im,jm,tr2)
-
-    return w, wd  
-
-def updatefromBC_adj(w, wd, wbd, field, nx, ny, gam, im, jm, gh, interf1, interf2, interf3, interf4, flininflow=None, flinoutflow=None, flinnoref=None, flinwall=None, finflow=None, foutflow=None, fjn=None, prr1=None, prr2=None, prd1=None, prd2=None, tr1=None, tr2=None, pinf=None):
-    ''' Update the state w from the BC '''
-
-    flinwall(w,wd,'Jlo', gam, interf3, gh, im, jm) 
-    flinoutflow(w,wd,'Ihi',interf2,pinf,True,gam,nx,ny,im,jm,gh)
-    flinnoref(w,wd,wbd,'Jhi',interf4,nx,ny,gam,gh,im,jm)
-    flininflow(w,wd,'Ilo',interf1,field,nx,ny,gam,im,jm)  
-    
-    return w, wd    
-
-def updatefromBC_lin_cyl(w, wd, wbd, field, nx, ny, gam, im, jm, gh, interf1, interf2, interf3, interf4, flininflow=None, flinoutflow=None, flinnoref=None, flinwall=None, finflow=None, foutflow=None, fjn=None, prr1=None, prr2=None, prd1=None, prd2=None, tr1=None, tr2=None):
-    ''' Update the state w from the BC '''
-
-    ## CYL
-    flinnoref(w,wd,wbd,'Jhi',interf2,nx,ny,gam,gh,im,jm)
-    flinwall(w,wd,'Jlo', gam, interf1, gh, im, jm)
-    fjn(wd,prr1,gh,gh,gh,gh,im,jm,wd,prd2,gh,gh,gh,gh,im,jm,tr1)
-    fjn(wd,prr2,gh,gh,gh,gh,im,jm,wd,prd1,gh,gh,gh,gh,im,jm,tr2)
-    fjn(w,prr1,gh,gh,gh,gh,im,jm,w,prd2,gh,gh,gh,gh,im,jm,tr1)
-    fjn(w,prr2,gh,gh,gh,gh,im,jm,w,prd1,gh,gh,gh,gh,im,jm,tr2)
-
-    return w, wd      
-
-def computeRes_lin(sch, flinsch, res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None):
+def computeRes_lin(sch, flinsch, res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, sponge=False, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None, wref=None):
     ''' Compute the opposite of the linearized residual (not divided by the volume) '''
 
-    if 'dnc' in sch:      
-        flinsch(res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, k4, im, jm)
+    Lmax = 1.e6   #0.3e5  #0.25e6  #0.10e6  #0.40e6 
+    r2 = 1.    #elsA 0.2  
+    r3 = 2.   #elsA 1.3  
+    r4 = 0.0001    #els1 1.   #0.02  #0.002  
+    # r4 = 0.
+    sourcear = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    sourceard = _np.zeros((im+2*gh, jm+2*gh,5), order='F') 
+
+    if 'dnc' in sch:   
+        if sponge:  
+            flinsch(res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, k4, im, jm, Lmax, r2, r3, r4, sourcear, sourceard) 
+        elif wref is not None:
+            flinsch(res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, k4, im, jm, Lmax, r3, r4, wref, sourcear, sourceard) 
+        else:
+            flinsch(res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, k4, im, jm) 
     else:
         flinsch(res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, im, jm)
 
@@ -570,8 +640,31 @@ def computeRes_dbyvol_lin(sch, flinsch, res, resd, w, wd, x0, y0, nx, ny, xc, yc
 
     return resd       
 
+def computeRes_adj(sch, flinsch, res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, sponge=False, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None, wref=None):
+    ''' Compute the opposite of the adjoint residual (not divided by the volume) '''
+
+    Lmax = 1.e6   #0.3e5  #0.25e6  #0.10e6   #0.40e6 
+    r2 = 1.    #elsA 0.2  
+    r3 = 2.   #elsA 1.3  
+    r4 = 0.0001    #els1 1.   #0.02  #0.002  
+    # r4 = 0.
+    sourcear = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    sourceard = _np.zeros((im+2*gh, jm+2*gh,5), order='F') 
+
+    if 'dnc' in sch:  
+        if sponge:
+            flinsch(res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, k4, im, jm, Lmax, r2, r3, r4, sourcear, sourceard) 
+        elif wref is not None:
+            flinsch(res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, k4, im, jm, Lmax, r3, r4, wref, sourcear, sourceard) 
+        else:    
+            flinsch(res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, k4, im, jm)
+    else:
+        flinsch(res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, im, jm)
+
+    return wd    
+
 def computeRes_dbyvol_adj(sch, flinsch, res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None):
-    ''' Compute the adjoint residual (not divided by the volume) '''
+    ''' Compute the adjoint residual (divided by the volume) '''
 
     for m in range(_np.shape(resd)[2]):
         resd[gh:-gh,gh:-gh,m] = - resd[gh:-gh,gh:-gh,m] / vol[gh:-gh,gh:-gh]
@@ -596,7 +689,7 @@ def computeCoeffDiagJac(dtm1, norm, norm0m1, ninf, ninf0m1, vol, gh):
 
     return coefdiag
 
-def constructJacLists(w, res, coefdiag, im, jm, gh, wbd, field, nx, ny, gam, interf1, interf2, interf3, interf4, flininflow, flinoutflow, flinnoref, flinwall, sch, flinsch, finflow, foutflow, x0, y0, xc, yc, vol, volf, cp, cv, prandtl, rgaz, cs, muref, tref, k2, k4, it=None, ite=None, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None, pinf=None):
+def constructJacLists(w, res, coefdiag, im, jm, gh, wbd, field, nx, ny, gam, interf1, interf2, interf3, interf4, flininflow, flinoutflow, flinnoref, flinwall, sch, flinsch, finflow, foutflow, x0, y0, xc, yc, vol, volf, cp, cv, prandtl, rgaz, cs, muref, tref, k2, k4, wallprof=None, compBC=True, sponge=False, it=None, ite=None, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None, pinf=None):
 
     # construct Jacobian
     wd   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
@@ -615,9 +708,9 @@ def constructJacLists(w, res, coefdiag, im, jm, gh, wbd, field, nx, ny, gam, int
                 wd *= 0.
                 f_misc.testvector(wd,m,l,k,gh,im,jm)
 
-                w, wd = updatefromBC_lin(w, wd, wbd, field, nx, ny, gam, im, jm, gh, interf1, interf2, interf3, interf4, flininflow, flinoutflow, flinnoref, flinwall, finflow, foutflow, pinf=pinf)
+                w, wd = updatefromBC_lin(w, wd, wbd, field, nx, ny, gam, rgaz, im, jm, gh, interf1, interf2, interf3, interf4, wallprof, compBC, flininflow, flinoutflow, flinnoref, flinwall, finflow, foutflow, pinf=pinf)
 
-                resd = computeRes_lin(sch, flinsch, res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar, eps4ar, divu2ar, vort2ar)
+                resd = computeRes_lin(sch, flinsch, res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, sponge, eps2ar, eps4ar, divu2ar, vort2ar)
 
                 f_misc.computejacobianfromjv_relaxed(Jac,IA,JA,resd,m,l,k,gh,coefdiag)
                 # if it == ite:
@@ -638,7 +731,7 @@ def constructJacLists(w, res, coefdiag, im, jm, gh, wbd, field, nx, ny, gam, int
 
     return IA, JA, Jac, nbentry
 
-def constructJacobian(w, res, im, jm, gh, wbd, field, nx, ny, gam, interf1, interf2, interf3, interf4, sch, flinsch, x0, y0, xc, yc, vol, volf, cp, cv, prandtl, rgaz, cs, muref, tref, k2, k4, flininflow=None, flinoutflow=None, flinnoref=None, flinwall=None, finflow=None, foutflow=None, it=None, ite=None, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None, pinf=None, comm=MPI.COMM_WORLD):
+def constructJacobian(w, res, im, jm, gh, wbd, field, nx, ny, gam, interf1, interf2, interf3, interf4, sch, flinsch, x0, y0, xc, yc, vol, volf, cp, cv, prandtl, rgaz, cs, muref, tref, k2, k4, wallprof=None, compBC=True, sponge=False, flininflow=None, flinoutflow=None, flinnoref=None, flinwall=None, finflow=None, foutflow=None, it=None, ite=None, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None, pinf=None, wref=None, comm=MPI.COMM_WORLD):
 
     # construct Jacobian
     wd   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
@@ -657,11 +750,12 @@ def constructJacobian(w, res, im, jm, gh, wbd, field, nx, ny, gam, interf1, inte
                 wd *= 0.
                 f_misc.testvector(wd,m,l,k,gh,im,jm)
 
-                w, wd = updatefromBC_lin(w, wd, wbd, field, nx, ny, gam, im, jm, gh, interf1, interf2, interf3, interf4, flininflow=flininflow, flinoutflow=flinoutflow, flinnoref=flinnoref, flinwall=flinwall, finflow=finflow, foutflow=foutflow, pinf=pinf)
+                w, wd = updatefromBC_lin(w, wd, wbd, field, nx, ny, gam, rgaz, im, jm, gh, interf1, interf2, interf3, interf4, wallprof, compBC, flininflow=flininflow, flinoutflow=flinoutflow, flinnoref=flinnoref, flinwall=flinwall, finflow=finflow, foutflow=foutflow, pinf=pinf)
 
-                resd = computeRes_lin(sch, flinsch, res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar, eps4ar, divu2ar, vort2ar)
+                resd = computeRes_lin(sch, flinsch, res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, sponge, eps2ar, eps4ar, divu2ar, vort2ar ,wref)
 
-                f_misc.computejacobianfromjv_dbyvol(Jac,IA,JA,resd,m,l,k,gh,im,jm,vol)
+                # f_misc.computejacobianfromjv_dbyvol(Jac,IA,JA,resd,m,l,k,gh,im,jm,vol)
+                f_misc.computejacobianfromjv(Jac,IA,JA,resd,m,l,k,gh,im,jm)
 
     mini = 2.e-16
     IA, JA, Jac = remove_zero_jac(IA, JA, Jac, mini)
@@ -673,7 +767,7 @@ def constructJacobian(w, res, im, jm, gh, wbd, field, nx, ny, gam, interf1, inte
 
     return Jacs  
 
-def constructJacobian_cyl(w, res, im, jm, gh, wbd, field, nx, ny, gam, interf1, interf2, interf3, interf4, sch, flinsch, x0, y0, xc, yc, vol, volf, cp, cv, prandtl, rgaz, cs, muref, tref, k2, k4, flininflow=None, flinoutflow=None, flinnoref=None, flinwall=None, finflow=None, foutflow=None, fjn=None, prr1=None, prr2=None, prd1=None, prd2=None, tr1=None, tr2=None, it=None, ite=None, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None):
+def constructJacobian_cyl(w, res, im, jm, gh, wbd, field, nx, ny, gam, interf1, interf2, interf3, interf4, sch, flinsch, x0, y0, xc, yc, vol, volf, cp, cv, prandtl, rgaz, cs, muref, tref, k2, k4, sponge=False, flininflow=None, flinoutflow=None, flinnoref=None, flinwall=None, finflow=None, foutflow=None, fjn=None, prr1=None, prr2=None, prd1=None, prd2=None, tr1=None, tr2=None, it=None, ite=None, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None):
 
     # construct Jacobian
     wd   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
@@ -694,7 +788,7 @@ def constructJacobian_cyl(w, res, im, jm, gh, wbd, field, nx, ny, gam, interf1, 
 
                 w, wd = updatefromBC_lin_cyl(w, wd, wbd, field, nx, ny, gam, im, jm, gh, interf1, interf2, interf3, interf4, flinnoref=flinnoref, flinwall=flinwall, fjn=fjn, prr1=prr1, prr2=prr2, prd1=prd1, prd2=prd2, tr1=tr1, tr2=tr2)
 
-                resd = computeRes_lin(sch, flinsch, res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar, eps4ar, divu2ar, vort2ar)
+                resd = computeRes_lin(sch, flinsch, res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, sponge, eps2ar, eps4ar, divu2ar, vort2ar)
 
                 f_misc.computejacobianfromjv_withjn_dbyvol(Jac,IA,JA,resd,m,l,k,gh,im,jm,vol)
 
@@ -706,6 +800,327 @@ def constructJacobian_cyl(w, res, im, jm, gh, wbd, field, nx, ny, gam, interf1, 
     Jacs = pet.createMatPetscCSR(IA, JA, Jac, im*jm*5, im*jm*5, 5*(2*gh+1)**2)
 
     return Jacs      
+
+def computeResDz(res, w, wd, wdd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None):
+    ''' Compute the z-derivative part of the residual , wd = Dz , wdd = Dzz '''
+
+    dz   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    dz2  = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    dzdz = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+
+    f_dz.coeffs_5p_dz(dz, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    f_dz.coeffs_5p_dz2(dz2, w, wdd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    f_dz.coeffs_dzdz(dzdz, w, wd, wd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # f_dz.coeffs_dzdz_part1(dzdz, w, wd, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # dzdz2 = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    # f_dz.coeffs_dzdz_part2(dzdz2, w, wd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # dzdz = dzdz + dzdz2
+
+    res = dz + dz2 + dzdz
+
+    return res
+
+def computeResDz_splitDz(res, w, wd, wdd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None):
+    ''' Compute the z-derivative part of the residual , wd = Dz , wdd = Dzz '''
+    dz   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    f_dz.coeffs_5p_dz(dz, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    res = dz
+    # import srcfv.f_dzfd as f_dzfd
+    # f_dzfd.coeffs_5p_dz(dz, w, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # eps = 1.e2  #1.e2 or 1.e3 (less efficient)
+    # dzeps   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    # f_dzfd.coeffs_5p_dz(dzeps, w+eps*wd, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # res = (dzeps - dz)/eps
+    
+    return res
+
+def computeResDz_splitDz2(res, w, wd, wdd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None):
+    ''' Compute the z-derivative part of the residual , wd = Dz , wdd = Dzz '''
+    dz2  = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    f_dz.coeffs_5p_dz2(dz2, w, wdd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    res = dz2
+    # print('wdd', _np.amax(wdd))
+    # import srcfv.f_dzfd as f_dzfd
+    # f_dzfd.coeffs_5p_dz2(dz2, w, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # eps = 1.e2   #1.e2
+    # dz2eps   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    # f_dzfd.coeffs_5p_dz2(dz2eps, w+eps*wdd, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # res = (dz2eps - dz2)/eps
+
+    return res
+
+def computeResDz_splitDzDz(res, w, wd, wdd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None):
+    ''' Compute the z-derivative part of the residual , wd = Dz , wdd = Dzz '''
+    dzdz = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    f_dz.coeffs_dzdz(dzdz, w, wd, wd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    res = dzdz
+    # f_dz.coeffs_dzdz_part1(dzdz, w, wd, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # dzdz2 = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    # f_dz.coeffs_dzdz_part2(dzdz2, w, wd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # res = dzdz + dzdz2
+    # import srcfv.f_dzfd as f_dzfd
+    # eps = 1.e3   #1.e3 
+    # eps2 = 1.e2   #1.e2
+    # f_dzfd.coeffs_5p_dz2(dzdz, w, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # dzdzeps = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    # f_dzfd.coeffs_5p_dz2(dzdzeps, w+eps*wdd, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # dzdzepsx2 = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    # f_dzfd.coeffs_5p_dz2(dzdzepsx2, w+2*eps*wdd, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # # res = (dzdzepsx2 - 2.*dzdzeps + dzdz)/eps**2 + dzdz2
+    # dzdz2 = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    # f_dzfd.coeffs_dzdz_part2(dzdz2, w, w, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # dzdz2eps = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    # f_dzfd.coeffs_dzdz_part2(dzdz2eps, w+eps2*wd, w+eps2*wd, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # dzdz2eps1 = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    # f_dzfd.coeffs_dzdz_part2(dzdz2eps1, w+eps2*wd, w, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # dzdz2eps2 = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    # f_dzfd.coeffs_dzdz_part2(dzdz2eps2, w, w+eps2*wd, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # res = (dzdzepsx2 - 2.*dzdzeps + dzdz)/eps**2 + (dzdz2eps - dzdz2eps1 - dzdz2eps2 + dzdz2)/eps2**2
+
+    return res    
+
+def computeResDz_linDiag(resd, w, wd, wdd, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None):
+    ''' Compute the z-derivative part of the linearised residual , wd = Dz , wdd = Dzz , wd0 = testvector, only the diagonal terms'''
+
+    dz    = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    dzd   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    dz2d  = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    dzdzd = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+
+    f_lindz.coeffs_5p_dz_d(dz, dzd, w, wd0, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    f_lindz.coeffs_5p_dz2_d(dz, dz2d, w, wd0, wdd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    f_lindz.coeffs_dzdz_d(dz, dzdzd, w, wd0, wd, wd, w, wd0, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # f_lindz.coeffs_dzdz_part1_d(dz, dzdzd, w, wd0, wd, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # dzdzd2 = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    # f_lindz.coeffs_dzdz_part2_d(dz, dzdzd2, w, wd0, wd, w, wd0, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # resd = dzd + dz2d + dzdzd + dzdzd2
+
+    resd = dzd + dz2d + dzdzd
+
+    return resd
+
+def computeResDz_linDz(resd, w, wd, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None):
+    ''' Compute the z-derivative part of the linearised residual , wd = Dz , wd0 = testvector, only the first derivative terms'''
+
+    dz      = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    dzdz    = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    dzdzbis = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+
+    f_dz.coeffs_5p_dz(dz, w, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    f_dz.coeffs_dzdz(dzdz, w, wd, wd0, w, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    f_dz.coeffs_dzdz(dzdzbis, w, wd0, wd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # f_dz.coeffs_dzdz_part1(dzdz, w, wd, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # f_dz.coeffs_dzdz_part1(dzdzbis, w, wd0, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # dzdz2 = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    # dzdz2bis = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    # f_dz.coeffs_dzdz_part2(dzdz2, w, wd, w, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # f_dz.coeffs_dzdz_part2(dzdz2bis, w, wd0, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+    # resd = dz + dzdz + dzdzbis + dzdz2 + dzdz2bis
+
+    resd = dz + dzdz + dzdzbis
+
+    return resd
+
+def computeResDz_linDzz(resd, w, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None):
+    ''' Compute the z-derivative part of the linearised residual , wd0 = testvector, only the second derivative terms'''
+
+    dz2    = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+
+    f_dz.coeffs_5p_dz2(dz2, w, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+
+    resd = dz2
+
+    return resd
+
+def computeResDz_linDzOnly(resd, w, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None):
+    ''' Compute the z-derivative part of the linearised residual , wd = Dz , wd0 = testvector, only the first derivative terms'''
+
+    dz      = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+
+    f_dz.coeffs_5p_dz(dz, w, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+
+    resd = dz
+
+    return resd
+
+def computeResDz_linDiagDzOnly(resd, w, wd, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None):
+    ''' Compute the z-derivative part of the linearised residual , wd = Dz , wdd = Dzz , wd0 = testvector, only the diagonal terms'''
+
+    dz    = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    dzd   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+
+    f_lindz.coeffs_5p_dz_d(dz, dzd, w, wd0, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+
+    resd = dzd
+
+    return resd
+
+# def computeResDz_adjDiag(resd, w, wd, wdd, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None):
+#     ''' Compute the z-derivative part of the adjoint residual , wd = Dz , wdd = Dzz , wd0 = testvector, only the diagonal terms'''
+
+#     dz    = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+#     dzd   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+#     dz2d  = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+#     dzdzd = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+
+#     f_adjdz.coeffs_5p_dz_b(dz, dzd, w, wd0, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+#     f_adjdz.coeffs_5p_dz2_b(dz, dz2d, w, wd0, wdd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+#     f_adjdz.coeffs_dzdz_b(dz, dzdzd, w, wd0, wd, wd, w, wd0, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+
+#     resd = dzd + dz2d + dzdzd
+
+#     return resd
+
+def constructJacobianDz(w, wd, wdd, im, jm, gh, wbd, field, nx, ny, gam, interf1, interf2, interf3, interf4, sch, flinsch, x0, y0, xc, yc, vol, volf, cp, cv, prandtl, rgaz, cs, muref, tref, k2, k4, wallprof=None, compBC=True, flininflow=None, flinoutflow=None, flinnoref=None, flinwall=None, finflow=None, foutflow=None, it=None, ite=None, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None, pinf=None, comm=MPI.COMM_WORLD):
+
+    # construct Jacobian
+    wd0   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    diagz = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    dz    = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    dz2   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+
+    nbentry = im*jm * (2*gh+1)*(2*gh+1) * 5*5
+    Jacdiagz  = _np.zeros((nbentry), order='F')
+    IAdiagz   = _np.zeros((nbentry), dtype=_np.int32, order='F')
+    JAdiagz   = _np.zeros((nbentry), dtype=_np.int32, order='F')
+
+    Jacdz  = _np.zeros((nbentry), order='F')
+    IAdz   = _np.zeros((nbentry), dtype=_np.int32, order='F')
+    JAdz   = _np.zeros((nbentry), dtype=_np.int32, order='F')
+
+    Jacdz2 = _np.zeros((nbentry), order='F')
+    IAdz2  = _np.zeros((nbentry), dtype=_np.int32, order='F')
+    JAdz2  = _np.zeros((nbentry), dtype=_np.int32, order='F')
+
+    w, wd = updatefromBC_lin(w, wd, wbd, field, nx, ny, gam, rgaz, im, jm, gh, interf1, interf2, interf3, interf4, wallprof, compBC, flininflow=flininflow, flinoutflow=flinoutflow, flinnoref=flinnoref, flinwall=flinwall, finflow=finflow, foutflow=foutflow, pinf=pinf)
+    # w, wdd = updatefromBC_lin(w, wdd, wbd, field, nx, ny, gam, im, jm, gh, interf1, interf2, interf3, interf4, compBC, flininflow=flininflow, flinoutflow=flinoutflow, flinnoref=flinnoref, flinwall=flinwall, finflow=finflow, foutflow=foutflow, pinf=pinf)
+
+    for m in range(5):
+        for l in range(1 + 2*gh):
+            for k in range(1 + 2*gh):
+                wd0 *= 0.
+                f_misc.testvector(wd0,m,l,k,gh,im,jm)
+
+                w, wd0 = updatefromBC_lin(w, wd0, wbd, field, nx, ny, gam, rgaz, im, jm, gh, interf1, interf2, interf3, interf4, wallprof, compBC, flininflow=flininflow, flinoutflow=flinoutflow, flinnoref=flinnoref, flinwall=flinwall, finflow=finflow, foutflow=foutflow, pinf=pinf)
+                
+                diagz = computeResDz_linDiag(diagz, w, wd, wdd, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None)
+                dz = computeResDz_linDz(dz, w, wd, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None)
+                dz2 = computeResDz_linDzz(dz2, w, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None)
+
+                f_misc.computejacobianfromdz(Jacdiagz,IAdiagz,JAdiagz,diagz,m,l,k,gh,im,jm)
+                f_misc.computejacobianfromdz(Jacdz,IAdz,JAdz,dz,m,l,k,gh,im,jm)
+                f_misc.computejacobianfromdz(Jacdz2,IAdz2,JAdz2,dz2,m,l,k,gh,im,jm)
+
+    mini = 2.e-16
+    IAdiagz, JAdiagz, Jacdiagz = remove_zero_jac(IAdiagz, JAdiagz, Jacdiagz, mini)
+    IAdz, JAdz, Jacdz = remove_zero_jac(IAdz, JAdz, Jacdz, mini)
+    IAdz2, JAdz2, Jacdz2 = remove_zero_jac(IAdz2, JAdz2, Jacdz2, mini)
+    nbentry = _np.shape(Jacdiagz)[0]
+    nbentry2 = _np.shape(Jacdz)[0]
+    nbentry3 = _np.shape(Jacdz2)[0]
+    # print(nbentry)
+    # print(nbentry2)
+    # print(nbentry3)
+
+    Diagz = pet.createMatPetscCSR(IAdiagz, JAdiagz, Jacdiagz, im*jm*5, im*jm*5, 5*(2*gh+1)**2,comm=comm)
+    # Diagz = None
+    Dz = pet.createMatPetscCSR(IAdz, JAdz, Jacdz, im*jm*5, im*jm*5, 5*(2*gh+1)**2,comm=comm)
+    Dz2 = pet.createMatPetscCSR(IAdz2, JAdz2, Jacdz2, im*jm*5, im*jm*5, 5*(2*gh+1)**2,comm=comm)
+
+    return Diagz, Dz, Dz2  
+
+def constructJacobianAndDz(w, wd, wdd, im, jm, gh, wbd, field, nx, ny, gam, interf1, interf2, interf3, interf4, sch, flinsch, x0, y0, xc, yc, vol, volf, cp, cv, prandtl, rgaz, cs, muref, tref, k2, k4, wallprof=None, compBC=True, sponge=False, flininflow=None, flinoutflow=None, flinnoref=None, flinwall=None, finflow=None, foutflow=None, it=None, ite=None, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None, pinf=None, wref=None, comm=MPI.COMM_WORLD):
+
+    # construct Jacobian
+    res   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    resd  = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    wd0   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    # diagz = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    dz    = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+    dz2   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+
+    nbentry = im*jm * (2*gh+1)*(2*gh+1) * 5*5
+    Jac = _np.zeros((nbentry), order='F')
+    IA  = _np.zeros((nbentry), dtype=_np.int32, order='F')
+    JA  = _np.zeros((nbentry), dtype=_np.int32, order='F')
+
+    # Jacdiagz  = _np.zeros((nbentry), order='F')
+    # IAdiagz   = _np.zeros((nbentry), dtype=_np.int32, order='F')
+    # JAdiagz   = _np.zeros((nbentry), dtype=_np.int32, order='F')
+
+    Jacdz  = _np.zeros((nbentry), order='F')
+    IAdz   = _np.zeros((nbentry), dtype=_np.int32, order='F')
+    JAdz   = _np.zeros((nbentry), dtype=_np.int32, order='F')
+
+    Jacdz2 = _np.zeros((nbentry), order='F')
+    IAdz2  = _np.zeros((nbentry), dtype=_np.int32, order='F')
+    JAdz2  = _np.zeros((nbentry), dtype=_np.int32, order='F')
+
+    # w, wd = updatefromBC_lin(w, wd, wbd, field, nx, ny, gam, im, jm, gh, interf1, interf2, interf3, interf4, compBC, flininflow=flininflow, flinoutflow=flinoutflow, flinnoref=flinnoref, flinwall=flinwall, finflow=finflow, foutflow=foutflow, pinf=pinf)
+    # w, wdd = updatefromBC_lin(w, wdd, wbd, field, nx, ny, gam, im, jm, gh, interf1, interf2, interf3, interf4, flininflow=flininflow, flinoutflow=flinoutflow, flinnoref=flinnoref, flinwall=flinwall, finflow=finflow, foutflow=foutflow, pinf=pinf)
+
+    for m in range(5):
+        for l in range(1 + 2*gh):
+            for k in range(1 + 2*gh):
+                wd0 *= 0.
+                f_misc.testvector(wd0,m,l,k,gh,im,jm)
+
+                w, wd0 = updatefromBC_lin(w, wd0, wbd, field, nx, ny, gam, rgaz, im, jm, gh, interf1, interf2, interf3, interf4, wallprof, compBC, flininflow=flininflow, flinoutflow=flinoutflow, flinnoref=flinnoref, flinwall=flinwall, finflow=finflow, foutflow=foutflow, pinf=pinf)
+                
+                resd = computeRes_lin(sch, flinsch, res, resd, w, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, sponge, eps2ar, eps4ar, divu2ar, vort2ar, wref)
+
+                # diagz = computeResDz_linDiag(diagz, w, wd, wdd, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None)
+                # dz = computeResDz_linDz(dz, w, wd, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None)
+                dz = computeResDz_linDzOnly(dz, w, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None)
+                dz2 = computeResDz_linDzz(dz2, w, wd0, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, k2, k4, im, jm, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None)
+
+                f_misc.computejacobianfromjv(Jac,IA,JA,resd,m,l,k,gh,im,jm)
+                # f_misc.computejacobianfromdz(Jacdiagz,IAdiagz,JAdiagz,diagz,m,l,k,gh,im,jm)
+                f_misc.computejacobianfromdz(Jacdz,IAdz,JAdz,dz,m,l,k,gh,im,jm)
+                f_misc.computejacobianfromdz(Jacdz2,IAdz2,JAdz2,dz2,m,l,k,gh,im,jm)
+
+    mini = 2.e-16
+    IA, JA, Jac = remove_zero_jac(IA, JA, Jac, mini)
+    # IAdiagz, JAdiagz, Jacdiagz = remove_zero_jac(IAdiagz, JAdiagz, Jacdiagz, mini)
+    IAdz, JAdz, Jacdz = remove_zero_jac(IAdz, JAdz, Jacdz, mini)
+    IAdz2, JAdz2, Jacdz2 = remove_zero_jac(IAdz2, JAdz2, Jacdz2, mini)
+
+    Jacs = pet.createMatPetscCSR(IA, JA, Jac, im*jm*5, im*jm*5, 5*(2*gh+1)**2,comm=comm)
+    # Diagz = pet.createMatPetscCSR(IAdiagz, JAdiagz, Jacdiagz, im*jm*5, im*jm*5, 5*(2*gh+1)**2,comm=comm)
+    Diagz = None
+    Dz = pet.createMatPetscCSR(IAdz, JAdz, Jacdz, im*jm*5, im*jm*5, 5*(2*gh+1)**2,comm=comm)
+    Dz2 = pet.createMatPetscCSR(IAdz2, JAdz2, Jacdz2, im*jm*5, im*jm*5, 5*(2*gh+1)**2,comm=comm)
+
+    return Jacs, Diagz, Dz, Dz2 
+    
+def constructdRdp(w, res, wallprof, im, jm, gh, wbd, field, nx, ny, gam, interf, sch, flinsch, x0, y0, xc, yc, vol, volf, cp, cv, prandtl, rgaz, cs, muref, tref, k2, k4, compBC=True, sponge=False, flininflow=None, flinoutflow=None, flinnoref=None, flinwall=None, finflow=None, foutflow=None, it=None, ite=None, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None, pinf=None, wref=None, comm=MPI.COMM_WORLD):
+
+    nbentry = im*jm*5 * im
+    wallprofd = _np.zeros((im+2*gh), order='F')
+    Jacdp  = _np.zeros((nbentry), order='F')
+    IAdp   = _np.zeros((nbentry), dtype=_np.int32, order='F')
+    JAdp   = _np.zeros((nbentry), dtype=_np.int32, order='F')
+
+    for m in range(im):
+        wd   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+        wallprofd *= 0.
+        f_misc.testvector_twall(wallprofd,m,gh,im)
+
+        # w[:,:gh,:]  = 0.
+
+        w, wd = updatefromBC_lin_control(w, wd, wallprof, wallprofd, wbd, field, nx, ny, gam, rgaz, im, jm, gh, interf, compBC, flininflow=flininflow, flinoutflow=flinoutflow, flinnoref=flinnoref, flinwall=flinwall, finflow=finflow, foutflow=foutflow, pinf=pinf)
+                
+        flinsch(res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, k4, im, jm)
+        # flinsch(res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, k4, im, jm, Lmax, r2, r3, r4, sourcear, sourceard)
+
+        f_misc.computejacobian_twall(Jacdp,IAdp,JAdp,resd,m,gh,im,jm,vol)
+
+    mini = 2.e-16
+    IAdp, JAdp, Jacdp = remove_zero_jac(IAdp, JAdp, Jacdp, mini)
+
+    dRdp = pet.createMatPetscCSR(IAdRdp, JAdRdp, JacdRdp, im*jm*5, im, im,comm=comm)
+
+    return dRdp
 
 
 

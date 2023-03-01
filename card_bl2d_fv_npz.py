@@ -1,4 +1,3 @@
-# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #!/usr/bin/env python
 
 '''
@@ -14,7 +13,7 @@ Created on 21 july 2020
                routine "main" and other related routines.
 '''
 
-import BROADCAST_npz as toy
+import BROADCAST_npzBugeat as toy
 
 import numpy as _np
 # FORTRAN
@@ -37,12 +36,18 @@ dnum  = dict()
 dphys = dict()
 
 #GEOMETRY
-im    = 1000   # X discretization
+im    = 300   # X discretization
 jm    = 150  # Y discretization 
-L     = 0.0718  #0.59 # FP length
-high  = 0.008  #0.035 # FP high
-xini  = 0.0065  #0.0024 # debut de la plaque
+L     = 0.59  #0.59 # FP length
+high  = 0.035  #0.035 # FP high
+xini  = 0.0060 #0.0024 0.0040 # debut de la plaque
 
+
+## stretching for outlet
+# imst = 30  #10  #30  #30
+# growthst = 1.1  #1.2  #1.05  #1.1
+# dgeom['growth sp']  = growthst
+# dgeom['im sp']      = imst
 
 
 dgeom['im']      = im
@@ -55,9 +60,9 @@ isresolvant = True
 isresolvant = False
 
 out_dir = 'Wksp/'
-treename = 'tree'
+treename = 'treeBugeat_300dnc5_nicolo_M0p1'
 
-ite     = 5
+ite     = 10
 
 cfl     = 0.9
 freqres = ite/1  #100  # frequence de sortie affichage residu
@@ -65,13 +70,13 @@ freqsort= ite/1
 
 
 sch   = 'dnc'        # numerical scheme in ['dnc', 'hllc']
-order =   7          # formal FD order for dnc, stencil width reconstruction for hllc
+order =   5          # formal FD order for dnc, stencil width reconstruction for hllc
 
-# if xini < (order+1)/2*L/(im-1):
-#     print 'Error : xini too small, go to negative x in ghost cells => xini should be higher than %s' % str((order+1)/2*L/(im-1))
-#     exit()
+if xini < (order+1)/2*L/(im-1):
+    print('Error : xini too small, go to negative x in ghost cells => xini should be higher than %s' %str((order+1)/2*L/(im-1)))
+    exit()
 
-extraporder = 2   # 2 #5   # extrapolation order for outflow
+extraporder = 0   # 2 #5   # extrapolation order for outflow
 
 k2 = 1.01 #1.01 #2.01
 k4 = 1.   #1.
@@ -81,6 +86,9 @@ os.system('mkdir -p %s' % out_dir)
 
 if sch == 'dnc':
     routinesch = 'flux_num_dnc%i_2d' % order
+    # routinesch = 'flux_num_dnc%i_fvo2_2d' % order
+    # routinesch = 'flux_num_dnc%i_sponge_down_2d' % order
+    # routinesch = 'flux_num_dnc%i_sponge_mut_down_2d' % order
     # routinesch = 'flux_num_dnc%i_nowall_2d' % order
     # routinesch = 'flux_num_dnc%i_nowall_nodiss_2d' % order
     # routinesch = 'flux_num_dnc%i_euler_nowall_2d' % order
@@ -99,7 +107,8 @@ dnum['freqsort'] = freqsort
 
 # Routines for BND:
 # routineout = 'bc_extrapolate_o%i_2d' % extraporder
-routineout = 'bc_pressure_2d'
+# routineout = 'bc_pressure_2d'
+routineout = 'bc_pressure_nicolo_2d'
 routinein  = 'bc_supandsubinlet_2d'
 # routinein  = 'bc_general_2d'
 routinenr  = 'bc_no_reflexion_2d'
@@ -121,7 +130,7 @@ dphys['Prandtl']  = 0.72
 dphys['Mach']     = 0.1  #4.5
 dphys['T0']       = 288.  #288.
 # dphys['P0']       = 728.312   #728.312
-dphys['Runit']    = 4.6e6  #3.4e6  
+dphys['Runit']    = 3.4e6  #3.4e6  
 dphys['Lref']     = 1.
 dphys['stateref'] = 'm0_runit_t0'
 # StateRef = 'm0_p0_t0'
@@ -223,7 +232,7 @@ elif compmode == 'impli':
     lf.append(eval("f_lhs.impli_matrix_free_2d"))
 
 tinit = timeit.time.time()
-# toy.bl2d_prepro(dgeom=dgeom, dphys=dphys, dnum=dnum , compmode=compmode, lf=lf, lflin=lflin, out_dir = out_dir, treename=treename, isresol = isresolvant)
+toy.bl2d_prepro(dgeom=dgeom, dphys=dphys, dnum=dnum , compmode=compmode, lf=lf, lflin=lflin, out_dir = out_dir, treename=treename, isresol = isresolvant)
 toy.bl2d_fromNPZtree(treename, ite, compmode = compmode, out_dir = out_dir, isresol= isresolvant)
 tend = timeit.time.time()
 tlaps = tend-tinit

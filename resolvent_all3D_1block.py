@@ -1,4 +1,3 @@
-# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 ## Resolvent in python using PETSc functions
 
@@ -11,6 +10,7 @@ import restart_init as ri
 
 import timeit
 import sys
+import os
 
 def resolvent(freq, wavenum, Jacs, Qq, Qvol2, Qvol2inv, P, Dz, Dzz):
 
@@ -28,12 +28,13 @@ def resolvent(freq, wavenum, Jacs, Qq, Qvol2, Qvol2inv, P, Dz, Dzz):
             eigenvector_forcage = []
             t1 = timeit.time.time()
             #Solving du pb aux VP
-            eigenvalue, eigenvector_forcage, eps =  pet.eigPetsc2(comm ,A ,Qvol2, P ,nev=1)
+            eigenvalue, eigenvector_forcage, eps =  pet.eigPetsc2(comm ,A ,Qvol2, P ,nev=1, tol=1.e-4, maxits=10)
             t2 = timeit.time.time()
             t_eig = t2 - t1
 
             eigenvector_reponse, eigenvector_forcageP = pet.computeReponse2(comm, eigenvalue, eigenvector_forcage ,ksp_R, P)
             eigenvector_reponseL.append(eigenvector_reponse)
+            ksp_R.destroy()
 
             eigenvector_forcageL.append(eigenvector_forcageP)
             # eigenvector_forcageL.append(eigenvector_forcage)
@@ -249,6 +250,23 @@ def computeP_everywhere(im, jm, equations):
 
     return P    
 
+def computeQ_L2_control(vol):
+
+    im = _np.shape(vol)[0]
+    j = 0
+    nbentry = im
+    Iq = _np.zeros((nbentry), dtype=_np.int32)
+    Jq = _np.zeros((nbentry), dtype=_np.int32)
+    valq2 = _np.zeros((nbentry))
+    for i in range(im):
+        current = i
+        Iq[current]   = i
+        Jq[current]   = i
+        valq2[current] = vol[i,j]
+
+    Qvol2    = pet.createMatPetscCSR(Iq, Jq, valq2, im, im, 1)
+
+    return Qvol2
 
 def restrix(im, jm, nbeq, xc, yc, xmin, xmax, ymin, ymax, square=True):
     ### Restriction in space, compute a square matrix for square='True' (only zeros in the columns outside the zone)
@@ -370,10 +388,23 @@ def __writeforcing_center(filename, imloc, jmloc, w, xc, yc) :
 
 def __writearray(filename, array) :
     # print 'write file'
-    f_out = open(filename , 'w')
+    # f_out = open(filename , 'w')
+    f_out = open(filename , 'a')
     f_out.write('TITLE="eigenvalues"\n')
     for k in range(_np.shape(array)[0]):
         f_out.write(str(array[k])   +  '\n')
+    f_out.close()
+
+def __writearray2(filename, array, freq, wave) :
+    # print 'write file'
+    f_out = open(filename , 'a')
+    # f_out.write('TITLE= "frequency" "wavenumber" "eigenvalues"\n')
+    f_out.write(str(freq) + ' ')
+    f_out.write(str(wave) + ' ')
+    for k in range(_np.shape(array)[0]):
+        # f_out.write(str(array[k]) + ' ')
+        f_out.write(str(array[k][0]) + ' ')
+    f_out.write('\n')
     f_out.close()
 
 
@@ -457,33 +488,54 @@ if __name__ == '__main__':
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
 
-    # frequency = _np.array([0.000230 / (2.*_np.pi)])   #2nd MODE
-    # frequency = _np.array([0.23, 0.25, 0.27, 0.29, 0.31, 0.33]) / (2.*_np.pi) /1.e4
 
-    # wavenumber= _np.array([1.2]) / (3.24e-3/2.94e-7)
-    # wavenumber= _np.linspace(1.,1.4,3) / (3.24e-3/2.94e-7)
+    treeBroadcast = str(sys.argv[1])
+    out_dir       = str(sys.argv[2])
+    freq          = float(sys.argv[3])
+    wave          = float(sys.argv[4])
 
-    freq = float(sys.argv[1])
-    wave = float(sys.argv[2])
-    frequency = _np.array([freq]) / (2.*_np.pi) / 1.e4 / 10
+    os.system('mkdir -p %s' % out_dir)
+
+    equations = [1, 2, 3]  #momentum
+    equations = [0, 1, 2, 3, 4]  #all equations
+
+    frequency = _np.array([freq]) / (2.*_np.pi) / 1.e5
     wavenumber= _np.array([wave]) / 1.e5
 
-    dir = './BASEFLOW_BL'
+    dic  = _np.load(treeBroadcast)
+    gh   = dic['gh']
+    x    = dic['xc'][gh:-gh,gh:-gh]
+    y    = dic['yc'][gh:-gh,gh:-gh]
+    im   = dic['im']
+    jm   = dic['jm']
+    vol  = dic['vol']
+    w    = dic['FlowSolutionEndOfRun']
+    gam  = dic['Gamma']
+    mach = dic['Mach']
+    IA     = dic['IA']
+    JA     = dic['JA']
+    Jacvol = dic['Aij']
+    IAdz   = dic['IAdz']
+    JAdz   = dic['JAdz']
+    Jacdz  = dic['Aijdz']
+    IAdz2  = dic['IAdz2']
+    JAdz2  = dic['JAdz2']
+    Jacdz2 = dic['Aijdz2']
 
-    out_dir = './Wksp/dnc_7/'
+    Qq = computeQ_Echu(w[gh:-gh,gh:-gh,:], vol[gh:-gh,gh:-gh], gam, mach)
+    Qvol2, Qvol2inv = computeQ_L2(vol[gh:-gh,gh:-gh])
+    P = computeP_everywhere(im, jm, equations)
 
-    file  = 'state_atcenter_mesh500_y150' 
-
-    x, y, ro, rou, rov, row, roe = ri.read_init(out_dir + file + '.dat')
-    im = _np.shape(x)[0]            # X discretization
-    jm = _np.shape(y)[1]             # Y discretization
-
-    Qq, Qvol2, Qvol2inv, P, Jacsurvol = read_PETSc(dir)
+    Jacsurvol = pet.createMatPetscCSR(IA, JA, Jacvol, im*jm*5, im*jm*5, 5*(2*gh+1)**2)
+    Dz        = pet.createMatPetscCSR(IAdz, JAdz, Jacdz, im*jm*5, im*jm*5, 5*(2*gh+1)**2)
+    Dzz       = pet.createMatPetscCSR(IAdz2, JAdz2, Jacdz2, im*jm*5, im*jm*5, 5*(2*gh+1)**2)
 
     xmin = x[0,0]
+    # xmin = 1.4e5
 
     xmax = x[-1,0]
     xmax = 1.75e6
+    # xmax = 1.7e5
 
     ymin = y[0,0]
 
@@ -491,60 +543,50 @@ if __name__ == '__main__':
     ymax = y[0,-1]/2
 
 
-    import computeBLthickness as compBL
-    Xplot, BL_thick, BL_disp_thick, BL_mom_thick, H12, inflec_point, inflec_point2 = compBL.computeBLquant(out_dir + file + '.dat')
-    DeltaOpt = 11000.
-    # DeltaOpt = 1.
-    indmax = _np.searchsorted(BL_disp_thick, DeltaOpt)
-    xmax = x[indmax,0]
-    print(xmax)
+    # import computeBLthickness as compBL
+    # Xplot, BL_thick, BL_disp_thick, BL_mom_thick, H12, inflec_point, inflec_point2 = compBL.computeBLquant(out_dir + file + '.dat')
+    # DeltaOpt = 11000.
+    # # DeltaOpt = 1.
+    # indmax = _np.searchsorted(BL_disp_thick, DeltaOpt)
+    # xmax = x[indmax,0]
+    if rank==0: print(xmax, flush=True)
 
     restrixQ = restrix(im, jm, 5, x, y, xmin, xmax, ymin, ymax, square=True)
     Qq       = Qq.matMult(restrixQ)
-    restrixP = restrix(im, jm, P.getSize()[1]/(im*jm), x, y, xmin, xmax, ymin, ymax, square=False)
+    restrixP = restrix(im, jm, P.getSize()[1]//(im*jm), x, y, xmin, xmax, ymin, ymax, square=False)
     P        = P.matMult(restrixP)
-    
-    viewer=PETSc.Viewer().createBinary(dir+'Dz', PETSc.Viewer.Mode.READ)
-    Dz=PETSc.Mat()
-    Dz.create(PETSc.COMM_WORLD)
-    Dz.setType('mpiaij')
-    Dz.load(viewer)
-    Dz.assemble()
 
-    viewer=PETSc.Viewer().createBinary(dir+'Dz2', PETSc.Viewer.Mode.READ)
-    Dzz=PETSc.Mat()
-    Dzz.create(PETSc.COMM_WORLD)
-    Dzz.setType('mpiaij')
-    Dzz.load(viewer)
-    Dzz.assemble()
-
-    eigenvalue, eigenvector_forcing, eigenvector_response = resolvent(frequency, wavenumber, Jacsurvol, Qq, Qvol2, Qvol2inv, P, Dz, Dzz)
+    ##  Chu norm for response and L2 norm for forcing
+    # eigenvalue, eigenvector_forcing, eigenvector_response = resolvent(frequency, wavenumber, Jacsurvol, Qq, Qvol2, Qvol2inv, P, Dz, Dzz)
+    ##  Chu norm for response and forcing
+    eigenvalue, eigenvector_forcing, eigenvector_response = resolvent(frequency, wavenumber, Jacsurvol, Qq, Qq,    Qvol2inv, P, Dz, Dzz)
 
     eig = _np.sqrt(_np.real(eigenvalue))
+    if rank ==0: print(eig, flush=True)
+
+    filename = out_dir + "/eigenval.dat"
+    if rank ==0: __writearray2(filename, eig, freq, wave)
+
     if rank ==0:
-        print('ok eigen')
-        print(eig)
-
-    filename = out_dir + 'eigenval.dat'
-    __writearray(filename, eig)
-
-    for k in range(len(eigenvalue)):
-        comm.Barrier()
-        w_response = _np.reshape( _np.real(_np.array(eigenvector_response[k])), (im,jm,5))
-        filename = out_dir + '/response_atcenter_eig_n%i_real.dat' % k
-        __writestate_center_gh(filename, im, jm, w_response, x, y)
-        comm.Barrier()
-        w_responsei = _np.reshape( _np.imag(_np.array(eigenvector_response[k])), (im,jm,5))
-        filename = out_dir + '/response_atcenter_eig_n%i_imag.dat' % k
-        __writestate_center_gh(filename, im, jm, w_responsei, x, y)
-        comm.Barrier()
-        f_opt = _np.reshape( _np.real(_np.array(eigenvector_forcing[k])), (im,jm,5))
-        filename = out_dir + '/forcing_atcenter_eig_n%i_real.dat' % k
-        __writestate_center_gh(filename, im, jm, f_opt, x, y)
-        comm.Barrier()
-        f_opti = _np.reshape( _np.imag(_np.array(eigenvector_forcing[k])), (im,jm,5))
-        filename = out_dir + '/forcing_atcenter_eig_n%i_imag.dat' % k
-        __writestate_center_gh(filename, im, jm, f_opti, x, y)
+        for k in range(len(eigenvalue)):
+            # comm.Barrier()
+            w_response = _np.reshape( _np.real(_np.array(eigenvector_response[k])), (im,jm,5))
+            filename = out_dir + "/response_atcenter_eig_om{:.2}_be{:.2}_n{:d}_real.dat".format(freq, wave, k)
+            __writestate_center_gh(filename, im, jm, w_response, x, y)
+            # comm.Barrier()
+            w_responsei = _np.reshape( _np.imag(_np.array(eigenvector_response[k])), (im,jm,5))
+            filename = out_dir + "/response_atcenter_eig_om{:.2}_be{:.2}_n{:d}_imag.dat".format(freq, wave, k)
+            __writestate_center_gh(filename, im, jm, w_responsei, x, y)
+            # comm.Barrier()
+            f_opt = _np.reshape( _np.real(_np.array(eigenvector_forcing[k])), (im,jm,5))
+            filename = out_dir + "/forcing_atcenter_eig_om{:.2}_be{:.2}_n{:d}_real.dat".format(freq, wave, k)
+            __writestate_center_gh(filename, im, jm, f_opt, x, y)
+            # comm.Barrier()
+            f_opti = _np.reshape( _np.imag(_np.array(eigenvector_forcing[k])), (im,jm,5))
+            filename = out_dir + "/forcing_atcenter_eig_om{:.2}_be{:.2}_n{:d}_imag.dat".format(freq, wave, k)
+            __writestate_center_gh(filename, im, jm, f_opti, x, y)
+            
+    comm.Barrier()
 
 
 

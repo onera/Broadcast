@@ -1,4 +1,3 @@
-# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #!/usr/bin/env python
 
 '''
@@ -31,6 +30,8 @@ import meshBL as mesh
 
 import numpy as _np
 import matplotlib.pyplot as plt
+
+import srcfv.f_dz     as f_dz
 
 import os
 import sys
@@ -318,6 +319,18 @@ def fillNPZ(filename, w, res, IA, JA, Jacvol, gh):
     _np.savez(filename+'.npz', **dic)
 
 
+def fillNPZ_3D(filename, IAdz, JAdz, Jacdz, IAdz2, JAdz2, Jacdz2):
+    ''' fill a given NPZ file with the lists (IA,JA,Aij) for Dz and Dz2 to build the 3D Jacobian'''
+
+    dic = dict(_np.load(filename+'.npz'))
+    dic['IAdz'] = IAdz
+    dic['JAdz'] = JAdz
+    dic['Aijdz'] = Jacdz
+    dic['IAdz2'] = IAdz2
+    dic['JAdz2'] = JAdz2
+    dic['Aijdz2'] = Jacdz2
+    _np.savez(filename+'.npz', **dic)
+
 def readCGNStree(filename):
     ''' read a CGNS tree made to run BROADCAST code '''
 
@@ -400,6 +413,7 @@ def readNPZtree(filename):
     if 'FlowSolutionEndOfRun' in dic:
         w = dic['FlowSolutionEndOfRun']
         res = dic['ResidualEndOfRun']
+        print('Solution read at EndOfRun')
     else:
         w = dic['FlowSolutionInit']
         res = dic['ResidualInit']
@@ -492,6 +506,13 @@ def bl2d_prepro(dgeom = dict(), dphys = dict(), dnum = dict(), compmode = 'direc
 
 
     x  = _np.linspace(xini, xini+L , im+1)
+    ## With stretching
+    # growthst = dgeom['growth sp']
+    # imst = dgeom['im sp']
+    # xst = mesh.stretch(imst, growthst, xini+L, L/im)
+    # x  = _np.concatenate((x, xst)) 
+    # im = im + imst
+
     ## MESH v2
     Ny_in   = 80*jm//100   #80%     
     deltaBL = high/4      #high/4 
@@ -503,6 +524,8 @@ def bl2d_prepro(dgeom = dict(), dphys = dict(), dnum = dict(), compmode = 'direc
     y_out   = mesh.exp_stretch_out(Ny_out, deltaBL, percent, Nend)
     y       = _np.concatenate((y_int, y_out)) 
     # y = mesh.bigeom_stretch_in(Ny_in, deltaBL, percent)
+
+
 
     # Initialize all cfd fields
     x0  = _np.zeros((im + 2*gh + 1, jm + 2*gh + 1   ), order='F')
@@ -721,8 +744,9 @@ def bl2d_prepro(dgeom = dict(), dphys = dict(), dnum = dict(), compmode = 'direc
 
     ######## Restart from a previous solution with exactly the same mesh
     import restart_init as ri
-    # filet = './Wksp/dnc_5/state_atcenter_ite10.dat'
-    filet = '../BROADCAST/Wksp/dnc_5/state_atcenter_mesh800_y150_incompressible_RigasSipp_Mach01_shorter_pout.dat'
+    filet = './Wksp/dnc_9/state_atcenter_ite9.dat'
+    # filet = '../BROADCAST/Wksp/dnc_5/state_atcenter_mesh800_y150_incompressible_RigasSipp_Mach01_shorter_pout.dat'
+    # filet = '../BROADCAST/Wksp/dnc_7/state_atcenter_mesh1000_y150_xini24e-4_longer_selfsim_goodvol.dat'
     Xin, Yin, roin, rouin, rovin, rowin, roein = ri.read_init(filet)
 
     # w[gh:-gh, gh:-gh, 0]     = roin
@@ -732,11 +756,11 @@ def bl2d_prepro(dgeom = dict(), dphys = dict(), dnum = dict(), compmode = 'direc
     # w[gh:-gh, gh:-gh, 4]     = roein
 
     import interpgrid
-    w[gh:-gh, gh:-gh, 0] = interpgrid.interpgrid(Xin, Yin, roin, xc[gh:-gh,:], yc[:,gh:-gh])
-    w[gh:-gh, gh:-gh, 1] = interpgrid.interpgrid(Xin, Yin, rouin, xc[gh:-gh,:], yc[:,gh:-gh])
-    w[gh:-gh, gh:-gh, 2] = interpgrid.interpgrid(Xin, Yin, rovin, xc[gh:-gh,:], yc[:,gh:-gh])
-    w[gh:-gh, gh:-gh, 3] = interpgrid.interpgrid(Xin, Yin, rowin, xc[gh:-gh,:], yc[:,gh:-gh])
-    w[gh:-gh, gh:-gh, 4] = interpgrid.interpgrid(Xin, Yin, roein, xc[gh:-gh,:], yc[:,gh:-gh])
+    # w[gh:-gh, gh:-gh, 0] = interpgrid.interpgrid(Xin, Yin, roin, xc[gh:-gh,:], yc[:,gh:-gh])
+    # w[gh:-gh, gh:-gh, 1] = interpgrid.interpgrid(Xin, Yin, rouin, xc[gh:-gh,:], yc[:,gh:-gh])
+    # w[gh:-gh, gh:-gh, 2] = interpgrid.interpgrid(Xin, Yin, rovin, xc[gh:-gh,:], yc[:,gh:-gh])
+    # w[gh:-gh, gh:-gh, 3] = interpgrid.interpgrid(Xin, Yin, rowin, xc[gh:-gh,:], yc[:,gh:-gh])
+    # w[gh:-gh, gh:-gh, 4] = interpgrid.interpgrid(Xin, Yin, roein, xc[gh:-gh,:], yc[:,gh:-gh])
 
   
     filename = out_dir + '/initialisation_gh.dat'
@@ -782,6 +806,10 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
     # tree, im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl, pinf = readCGNStree(filename)
     im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl, pinf = readNPZtree(filename)
 
+    Lmax = 1.e6  #0.25e6  #0.10e6  #0.40e6  #1.e6
+    r2 = 1.    #elsA 0.2  #0.1   #0.2   #1.
+    r3 = 1.3   #elsA 1.3  #0.01   #1.3
+    r4 = 30.     #els1 1.   #0.005  #0.01*100000    #0.02   #0.01?   #0.002  #14.  #30
 
     routinein  = lf[0]
     routineout = lf[1]
@@ -967,7 +995,8 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
             finflow(w,'Ilo',interf1,field,nx,ny,gam,im,jm)
             fnoref(w,wbd,'Jhi',interf4,nx,ny,gam,gh,im,jm)
             # foutflow(w,'Ihi', interf2, im, jm, gh)
-            foutflow(w,'Ihi',interf2,pinf,True,gam,nx,ny,im,jm,gh)
+            foutflow(w,'Ihi',interf2,pinf,1.,gam,nx,ny,im,jm,gh)
+            # foutflow(w,'Ihi',interf2,pinf,True,gam,nx,ny,im,jm,gh)
             fwall(w,'Jlo', gam, interf3, gh, im, jm)
                         
             filename = out_dir + '/initialisation_gh.dat'
@@ -975,8 +1004,11 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
 
             # Compute spatial discretization
             # if sch == 'dnc':
+            sourcear = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+            sourceard = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
             if 'dnc' in sch:    
                 fsch(res, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, k4, im, jm)
+                # fsch(res, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, k4, im, jm, Lmax, r2, r3, r4, sourcear)
             else:
                 fsch(res, w, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, im, jm)
             norm, ninf = f_norm.compute_norml2inf(res ,im, jm, gh)
@@ -1008,9 +1040,9 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
                 ## relaxed on diag:
                 r = _np.max([norm[:3]*norm0m1[:3], ninf[:3]*ninf0m1[:3]])
                 cflm1 = r*dtm1
-                print('iter = ', it)
+                print('iter = ', it, flush=True)
                 print("1/cfl = ", cflm1)
-                print(norm)
+                print(norm, flush=True)
                 coefdiag = cflm1 * vol[gh:-gh,gh:-gh]
                 for m in range(5):
                     for l in range(1 + 2*gh):
@@ -1027,12 +1059,14 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
                             # finflow(w,'Ilo', interf1, field,im,jm) 
                             flinnoref(w,wd,wbd,'Jhi',interf4,nx,ny,gam,gh,im,jm)
                             # flinoutflow(w,wd,'Ihi', interf2, im, jm, gh)
-                            flinoutflow(w,wd,'Ihi', interf2, pinf,True,gam,nx,ny,im, jm, gh)
+                            flinoutflow(w,wd,'Ihi',interf2,pinf,1.,gam,nx,ny,im,jm,gh)
+                            # flinoutflow(w,wd,'Ihi', interf2, pinf,True,gam,nx,ny,im, jm, gh)
                             # foutflow(w,'Ihi', interf2, im, jm, gh)
                             flinwall(w,wd,'Jlo', gam, interf3, gh, im, jm)
                                                        
                             if 'dnc' in sch:      
                                 flinsch(res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, k4, im, jm)
+                                # flinsch(res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, k4, im, jm, Lmax, r2, r3, r4, sourcear, sourceard)
                                 # flinsch(res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, k4, im, jm, eps2ar, eps4ar, divu2ar, vort2ar)
                             else:
                                 flinsch(res, resd, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, k2, im, jm)
@@ -1082,10 +1116,10 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
                 ## Remove the zero stored
                 timeinremove = timeit.time.time()
                 timeconstructjac += (timeinremove - timeinjac)/ite
-                mini = 2.e-16
+                mini = 2.e-16  #2.e-16
                 IA, JA, Jac = remove_zero_jac(IA, JA, Jac, mini)
                 nbentry = _np.shape(Jac)[0]
-                print(nbentry)
+                print(nbentry, flush=True)
                 timeoutremove = timeit.time.time()
                 timeremove += (timeoutremove - timeinremove)/ite
 
@@ -1155,17 +1189,56 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
             Jacvol[k] = Jac[k]/vol[(IA[k]//(jm*5))+gh, ((IA[k]%(jm*5))//5)+gh]
         Jacsurvol = pet.createMatPetscCSR(IA, JA, Jacvol, im*jm*5, im*jm*5, 5*(2*gh+1)**2)  
 
-        print('filling CGNS')
+        print('filling CGNS', flush=True)
         filename = out_dir + '/' + treename
         # fillCGNS(filename, tree, w, res, IA, JA, Jacvol, gh)
         fillNPZ(filename, w, res, IA, JA, Jacvol, gh)
+
+        ### Compute Jacobian Dz and Dzz contributions
+
+        wd   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+        dz   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+        dz2  = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
+        nbentry = im*jm * (2*gh+1)*(2*gh+1) * 5*5
+        Jacdz  = _np.zeros((nbentry), order='F')
+        IAdz   = _np.zeros((nbentry), dtype=_np.int32, order='F')
+        JAdz   = _np.zeros((nbentry), dtype=_np.int32, order='F')
+        Jacdz2 = _np.zeros((nbentry), order='F')
+        IAdz2  = _np.zeros((nbentry), dtype=_np.int32, order='F')
+        JAdz2  = _np.zeros((nbentry), dtype=_np.int32, order='F')
+        for m in range(5):
+            for l in range(1 + 2*gh):
+                for k in range(1 + 2*gh):
+                    wd *= 0.
+                    f_misc.testvector(wd,m,l,k,gh,im,jm)
+
+                    flininflow(w,wd,'Ilo',interf1,field,nx,ny,gam,im,jm)                
+                    # finflow(w,'Ilo', interf1, field,im,jm) 
+                    flinnoref(w,wd,wbd,'Jhi',interf4,nx,ny,gam,gh,im,jm)
+                    # flinoutflow(w,wd,'Ihi', interf2, im, jm, gh)
+                    flinoutflow(w,wd,'Ihi', interf2, pinf,1.,gam,nx,ny,im, jm, gh)
+                    # flinoutflow(w,wd,'Ihi', interf2, pinf,True,gam,nx,ny,im, jm, gh)
+                    # foutflow(w,'Ihi', interf2, im, jm, gh)
+                    flinwall(w,wd,'Jlo', gam, interf3, gh, im, jm)
+
+                    f_dz.coeffs_5p_dz(dz, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+                    f_dz.coeffs_5p_dz2(dz2, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
+
+                    f_misc.computejacobianfromdz(Jacdz,IAdz,JAdz,dz,m,l,k,gh,im,jm)
+                    f_misc.computejacobianfromdz(Jacdz2,IAdz2,JAdz2,dz2,m,l,k,gh,im,jm)
+
+        IAdz, JAdz, Jacdz = remove_zero_jac(IAdz, JAdz, Jacdz, mini)
+        IAdz2, JAdz2, Jacdz2 = remove_zero_jac(IAdz2, JAdz2, Jacdz2, mini)
+
+        fillNPZ_3D(filename, IAdz, JAdz, Jacdz, IAdz2, JAdz2, Jacdz2)
         
         ### Resolvent : compute eigenvalues and eigenvectors
 
         if isresol:
 
             dir = './'
-            dir = './BASEFLOW_BL/'    
+            dir = './BASEFLOW_BL/'
+            # dir = './BASEFLOW_300_y150_dnc5_incompressible_RigasSipp_Mach01_shorter_pout/'    
 
             os.system('mkdir -p %s' % dir)
             equations = [1, 2, 3] #Forcing on momentum equations

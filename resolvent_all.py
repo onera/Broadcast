@@ -1,4 +1,3 @@
-# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 ## Resolvent in python using PETSc functions
 
@@ -193,6 +192,73 @@ def computeQ_L2(vol,comm=PETSc.COMM_WORLD.tompi4py()):
     Qvol2inv = pet.createMatPetscCSR(Iq, Jq, valq2inv, im*jm*5, im*jm*5, 1,comm=comm)
 
     return Qvol2, Qvol2inv
+
+def computeQ_L2_control(vol,comm=PETSc.COMM_WORLD.tompi4py()):
+
+    im = _np.shape(vol)[0]
+    j = 0
+    nbentry = im
+    Iq = _np.zeros((nbentry), dtype=_np.int32)
+    Jq = _np.zeros((nbentry), dtype=_np.int32)
+    valq2 = _np.zeros((nbentry))
+    for i in range(im):
+        current = i
+        Iq[current]   = i
+        Jq[current]   = i
+        valq2[current] = vol[i,j]
+
+    Qvol2    = pet.createMatPetscCSR(Iq, Jq, valq2, im, im, 1,comm=comm)
+
+    return Qvol2
+
+def computeP_control(im, xc, xmin, xmax,comm=PETSc.COMM_WORLD.tompi4py()):
+    ### matrix P for control with space restriction
+
+    nbentry = im
+    Ip = _np.zeros((nbentry), dtype=_np.int32)
+    Jp = _np.zeros((nbentry), dtype=_np.int32)
+    valp = _np.zeros((nbentry))
+    n_remove_i = 0
+    current = -1
+    for i in range(im):
+        if xc[i,0] < xmin:
+            n_remove_i += 1
+        elif xc[i,0] > xmax:
+            n_remove_i += 1
+        else:    
+            current += 1
+            Ip[current]   = i
+            Jp[current]   = i - n_remove_i
+            valp[current] = 1.
+    nbentry_now = im - n_remove_i
+    Ip = Ip[:nbentry_now]
+    Jp = Jp[:nbentry_now]
+    valp = valp[:nbentry_now]
+    P = pet.createMatPetscCSR(Ip, Jp, valp, im, nbentry_now, 1,comm=comm)
+
+    return P  
+
+def computeP_control_square(im, xc, xmin, xmax,comm=PETSc.COMM_WORLD.tompi4py()):
+    ### matrix P for control with space restriction
+
+    nbentry = im
+    Ip = _np.zeros((nbentry), dtype=_np.int32)
+    Jp = _np.zeros((nbentry), dtype=_np.int32)
+    valp = _np.zeros((nbentry))
+    current = -1
+    for i in range(im):
+        current += 1
+        Ip[current]   = i
+        Jp[current]   = i 
+        if xc[i,0] < xmin:
+            valp[current] = 0.
+        elif xc[i,0] > xmax:
+            valp[current] = 0.
+        else:    
+            valp[current] = 1.
+    P = pet.createMatPetscCSR(Ip, Jp, valp, im, im, 1,comm=comm)
+
+    return P  
 
 # def computeShearStressVector(state,vol,cv,muref,tref,cs):
 def computeShearStressVector(vol,yc):    
@@ -468,6 +534,17 @@ def __writestate_center_gh(filename, imloc, jmloc, w, xc, yc) :
                         str(roe)     + '\n')
     f_out.close()
 
+def __writecontrol(filename, imloc, c, xc) :
+    # print 'write file'
+    f_out = open(filename , 'w')
+    f_out.write('TITLE="state"\n')
+    f_out.write('VARIABLES= "X" "c" \n')
+    f_out.write('ZONE I = ' + str(imloc) + '\n')
+    j = 0
+    for i in range(imloc):
+        f_out.write(str(xc[i,j]) + ' ' + str(c[i]) + '\n')
+    f_out.close()
+
 def __writeforcing_center(filename, imloc, jmloc, w, xc, yc) :
     # print 'write file'
     f_out = open(filename , 'w')
@@ -579,14 +656,16 @@ if __name__ == '__main__':
     # frequency = _np.linspace(0.6,1.,10) / (2.*_np.pi) /1.e4 # around 1st mode
     frequency = _np.linspace(2.2,2.4,9) / (2.*_np.pi) /1.e4 # around 2nd mode
     # frequency = _np.array([7.8e-5]) / (2.*_np.pi)     #1st MODE
+    frequency = _np.array([12.]) / (2.*_np.pi) /1.e5
 
 
-    dir = './BASEFLOW_BL'
+    dir = './BASEFLOW_BL/'
+    dir = './BASEFLOW_300_y150_dnc5_incompressible_RigasSipp_Mach01_shorter_pout/'
 
     out_dir = './Wksp/dnc_7/'
+    out_dir = './Wksp/dnc_5/'
 
-
-    file  = 'state_atcenter_mesh500_y150'    
+    file  = 'state_atcenter_300'    
 
 
     x, y, ro, rou, rov, row, roe = ri.read_init(out_dir + file + '.dat')
@@ -599,24 +678,25 @@ if __name__ == '__main__':
 
     xmax = x[-1,0]
     xmax = 1.75e6  
+    xmax = 3.6e5  #INC
 
     ymin = y[0,0]
 
     ymax = y[0,-1]
-    ymax = y[0,-1]/2
+    # ymax = y[0,-1]/2
 
 
-    import computeBLthickness as compBL
-    Xplot, BL_thick, BL_disp_thick, BL_mom_thick, H12, inflec_point, inflec_point2 = compBL.computeBLquant(out_dir + file + '.dat')
-    DeltaOpt = 11000.
-    # DeltaOpt = 1.
-    indmax = _np.searchsorted(BL_disp_thick, DeltaOpt)
-    xmax = x[indmax,0]
+    # import computeBLthickness as compBL
+    # Xplot, BL_thick, BL_disp_thick, BL_mom_thick, H12, inflec_point, inflec_point2 = compBL.computeBLquant(out_dir + file + '.dat')
+    # DeltaOpt = 11000.
+    # # DeltaOpt = 1.
+    # indmax = _np.searchsorted(BL_disp_thick, DeltaOpt)
+    # xmax = x[indmax,0]
     print(xmax)
 
     restrixQ = restrix(im, jm, 5, x, y, xmin, xmax, ymin, ymax, square=True)
     Qq       = Qq.matMult(restrixQ)
-    restrixP = restrix(im, jm, P.getSize()[1]/(im*jm), x, y, xmin, xmax, ymin, ymax, square=False)
+    restrixP = restrix(im, jm, P.getSize()[1]//(im*jm), x, y, xmin, xmax, ymin, ymax, square=False)
     P        = P.matMult(restrixP)
 
     eigenvalue, eigenvector_forcing, eigenvector_response = resolvent(frequency, Jacsurvol, Qq, Qvol2, Qvol2inv, P)

@@ -1,4 +1,3 @@
-# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 ## Compute several BL thicknesses
 
@@ -17,6 +16,34 @@ def dichotomie(inflec, a, b, tol=1):
 		else:
 			a = c
 	return b
+
+def moving_avg(a, n):
+	## offset moving average of length n on the array a (do not average the n last downstream values, start from the end and go upstream)
+	Na = _np.shape(a)[0]
+	sum = 0.
+	sumarr = _np.zeros(Na)
+	for i in range(n):
+		sum += a[Na-1-i]
+		sumarr[Na-1-i] = a[Na-1-i]
+	for i in range(Na-n):
+		sum += a[Na-n-1-i]
+		sum -= a[Na-1-i]
+		sumarr[Na-n-1-i] = sum/n
+	return sumarr
+
+def moving_avg_c(a, n):
+	## centered moving average of length n on the array a (do not average the n last downstream values, start from the end and go upstream)
+	Na = _np.shape(a)[0]
+	sum = 0.
+	sumarr = _np.zeros(Na)
+	for i in range(n):
+		sum += a[Na-1-i]
+		sumarr[Na-1-i] = a[Na-1-i]
+	for i in range(Na-n):
+		sum += a[Na-n-1-i]
+		sum -= a[Na-1-i]
+		sumarr[Na-n//2-1-i] = sum/n
+	return sumarr
 
 def computeBLquant(filet):
 
@@ -130,7 +157,10 @@ def computeBLquant2(xc,yc,w):
 	inflec2       = _np.zeros((Nx,Ny-2-1))
 	inflec_point2 = _np.zeros(Nx)
 
-	
+	derU = _np.gradient(u, Y[0,:], axis=1)
+	gip = _np.gradient(ro*derU, Y[0,:], axis=1)
+
+
 	for k in range(Nx):
 
 		## 99% BL thickness
@@ -157,13 +187,15 @@ def computeBLquant2(xc,yc,w):
 		for i in range(_np.shape(inflec)[1]):
 			inflec[loc,i] = (ro[loc,i+1] - ro[loc,i]) / (Y[loc,i+1] - Y[loc,i]) * (u[loc,i+1] - u[loc,i]) / (Y[loc,i+1] - Y[loc,i]) + ro[loc,i] * (u[loc,i+2] - 2.*u[loc,i+1] + u[loc,i]) / (Y[loc,i+1] - Y[loc,i])**2
 			tmp[loc,i] = ro[loc,i] * (u[loc,i+1] - u[loc,i]) / (Y[loc,i+1] - Y[loc,i])
+			# tmp[loc,i] = (u[loc,i+1] - u[loc,i]) / (Y[loc,i+1] - Y[loc,i])
 		for i in range(_np.shape(inflec)[1]-1):	
 			inflec2[k,i] = (tmp[loc,i+1] - tmp[loc,i]) / (Y[loc,i+1] - Y[loc,i])
 		# if loc == Nx/2:
 		# 	print dichotomie(inflec[loc,:], h/2, h)
 		# inflec_point[k] = Y[loc, dichotomie(inflec[loc,:], h//2, h)]
 		inflec_point[k] = Y[loc, dichotomie(inflec[loc,:], h//4, h)]
-		inflec_point2[k] = Y[loc, dichotomie(inflec2[loc,:], h//4, h)]
+		# inflec_point2[k] = Y[loc, dichotomie(inflec2[loc,:], h//4, h)]
+		inflec_point2[k] = Y[loc, dichotomie(gip[loc,:], h//4, h)]
 
 
 	# plt.figure(5)
