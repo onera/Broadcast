@@ -112,7 +112,6 @@ for file in files:
     if (ext == '.F90') :
         filein  = dir + file
         fppfile = 'prepro_dz_axi/' + file1 + '.f90'
-:x
         # exec_str = 'cpp -I%s -P -C %s %s' % (srcdir, filein, fppfile)
         os.system(exec_str)
         s1 += filein + ' '
