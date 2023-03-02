@@ -1,0 +1,560 @@
+! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/
+
+! =============================================================================
+!          consistent fluxes for DNC5 2D
+! =============================================================================
+!
+subroutine flux_num_dnc5_nowall_nodiss_2d(residu,w,x0,y0,nx,ny,xc,yc,vol,volf,gh,cp,cv,prandtl,&
+                            gam,rgaz,cs,muref,tref,s_suth,k2,k4,im,jm)
+!
+  implicit none
+! variables for dimension -----------------------------------------
+  integer :: im,jm,gh
+! required arguments ----------------------------------------------
+  real(8),intent(in) :: cp,cv,prandtl,gam,rgaz ! thermo
+  real(8),intent(in) :: k2,k4 ! dissipation
+  real(8),intent(in) :: cs,muref,tref,s_suth ! viscosity
+  real(8),dimension(1-gh:im+gh+1,1-gh:jm+gh+1      ),intent(in) :: x0
+  real(8),dimension(1-gh:im+gh+1,1-gh:jm+gh+1      ),intent(in) :: y0
+  real(8),dimension(1-gh:im+gh+1,1-gh:jm+gh+1, 2   ),intent(in) :: nx
+  real(8),dimension(1-gh:im+gh+1,1-gh:jm+gh+1, 2   ),intent(in) :: ny
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh        ),intent(in) :: xc
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh        ),intent(in) :: yc
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh        ),intent(in) :: vol
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh  , 2   ),intent(in) :: volf
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh  , 5   ),intent(in) :: w
+! Returned objects ------------------------------------------------
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh  , 5   ),intent(inout) :: residu
+! Non-required arguments -------------------------------------------
+  real(8),dimension(1-gh:im+gh+1,1-gh:jm+gh+1, 5, 2) :: hn
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh  , 5   ) :: f,g
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh        ) :: velx
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh        ) :: vely
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh        ) :: velz
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh        ) :: tloc
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh        ) :: p
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh        ) :: mu
+  real(8),dimension(1-gh:im+gh  ,1-gh:jm+gh     , 2) :: gradu,gradv,gradw,gradmu
+  real(8),dimension(5)    :: deltar,deltal,t
+  integer :: i,j,h
+  real(8) :: nx_N, nx_S, nx_E, nx_O, volm1, ux,vx,wx,tx
+  real(8) :: ny_N, ny_S, ny_E, ny_O, uy,vy,wy,ty
+  real(8) :: val_N, val_S, val_E, val_O
+  real(8) :: fxro1,fxro2, fxrou1,fxrou2,fxrov1,fxrov2,fxrow1,fxrow2,fxroe1,fxroe2
+  real(8) :: fvro1,fvro2, fvrou1,fvrou2,fvrov1,fvrov2,fvrow1,fvrow2,fvroe1,fvroe2
+  real(8) :: gvro1,gvro2, gvrou1,gvrou2,gvrov1,gvrov2,gvrow1,gvrow2,gvroe1,gvroe2
+  real(8) :: dissro1,dissro2, dissrou1,dissrou2,dissrov1,dissrov2,dissrow1,dissrow2,dissroe1,dissroe2
+  real(8) :: cpprandtl, mmu, lambda, uu, vv, ww, ro,rom1,htot,eloc,ec
+  real(8) :: predro1,predrou1,predrov1,predrow1,predroe1, eps2,eps4
+  real(8) :: predro2,predrou2,predrov2,predrow2,predroe2, rspec
+  real(8) :: divu,divu2,vort2,dx,dy,dxm1,dym1,dxm2,dym2
+  real(8) :: nxloc, nyloc, sn, invsn, sc1, sc2
+  real(8) :: gui,gvi,gwi,gmui
+  real(8) :: guj,gvj,gwj,gmuj
+  real(8) :: rhom,rhomr,rhoml,rhom1l,c2l,c2r,rr,r,u,ur,ul,vr,vl,wr,wl,c2x,nx2,ny2
+  real(8) :: ab, sq,ducros1,ducros2,k_sensor1,k_sensor2
+  real(8) :: b1,b2,b3,b4,b5,c1,c2,c3,c4,c5,d1,d2,d3,wiggle, denom,betas
+  real(8) :: omrr,coef,test,diffro,diffrou,diffrov,diffrow,diffroe,v
+  real(8) :: HALF,ONE,ZERO,TWO,TWOTHIRD,FOURTH,TWELFTH,cvm1
+  real(8) :: TWENTYFOURTH,ccross
+  real(8) :: mach2,alpha,vn2,cprim
+! -----------------------------------------------------------------
+!
+  HALF     = 0.5d0
+  ONE      = 1.d0
+  ZERO     = 0.d0
+  TWO      = 2.d0
+  TWOTHIRD = 2.d0/3.d0
+  FOURTH   = 0.25d0
+  TWELFTH  = 0.25d0/3.d0  
+  cpprandtl = cp/prandtl
+  cvm1      = ONE/cv
+  TWENTYFOURTH = ONE/24.d0
+  ccross = TWELFTH*0.0625d0
+
+! k2 = 1.d0
+! k4 = 1.d0/60d0 already in coef for predictor
+  
+  eps2 = ZERO
+  eps4 = k4
+  
+  diffro   = ZERO
+  diffrou  = ZERO
+  diffrov  = ZERO
+  diffrow  = ZERO
+  diffroe  = ZERO
+  
+  dissro1  = ZERO
+  dissro2  = ZERO
+  dissrou1 = ZERO
+  dissrou2 = ZERO
+  dissrov1 = ZERO
+  dissrov2 = ZERO
+  dissrow1 = ZERO
+  dissrow2 = ZERO
+  dissroe1 = ZERO
+  dissroe2 = ZERO
+  
+! Coef for grad o6
+  denom = 1.d0/60.d0
+  
+  b1 =  45.d0 * denom
+  b2 = - 9.d0 * denom
+  b3 =          denom 
+  
+!expression for FV
+
+! c3 = b3
+! c2 = c3 + b2
+! c1 = c2 + b1
+  
+  c1 =  37.d0 * denom
+  c2 = - 8.d0 * denom
+  c3 =          denom
+  
+!predictor
+  
+  d1 = 10.d0 * denom
+  d2 =  5.d0 * denom
+  d3 =         denom
+
+  betas = muref*(tref + cs)/(sqrt(tref)*tref) ! for Sutherland
+  
+! Primitives
+  
+!$AD II-LOOP
+      do j=1-gh,jm+gh
+!$AD II-LOOP
+!DIR$ IVDEP
+      do i=1-gh,im+gh
+
+    ro = w(i,j,1)
+    rom1 = ONE/ro
+    velx(i,j) = w(i,j,2) * rom1
+    vely(i,j) = w(i,j,3) * rom1
+    velz(i,j) = w(i,j,4) * rom1
+!
+    ec  = HALF*( velx(i,j)*velx(i,j) &
+               + vely(i,j)*vely(i,j) &
+               + velz(i,j)*velz(i,j))
+
+! ec  = HALF*( velx(i,j)*velx(i,j) &
+!            + vely(i,j)*vely(i,j))
+!
+    eloc = (w(i,j,5) - ec*ro)*rom1
+!
+    tloc(i,j) = eloc*cvm1
+!
+    p(i,j)  = (gam-ONE)*ro*eloc
+!  p(i,j)  = ro*rgaz*tloc(i,j)
+    
+    htot= (w(i,j,5) + p(i,j))*rom1
+    
+    f(i,j,1)  = w(i,j,2) 
+    f(i,j,2)  = w(i,j,2) * velx(i,j) + p(i,j)
+    f(i,j,3)  = w(i,j,2) * vely(i,j)
+    f(i,j,4)  = w(i,j,2) * velz(i,j)
+    f(i,j,5)  = w(i,j,2) * htot
+    
+    g(i,j,1)  = w(i,j,3) 
+    g(i,j,2)  = w(i,j,3) * velx(i,j) 
+    g(i,j,3)  = w(i,j,3) * vely(i,j) + p(i,j)
+    g(i,j,4)  = w(i,j,3) * velz(i,j)
+    g(i,j,5)  = w(i,j,3) * htot
+    
+!h(i,j,1)  = w(i,j,4)
+!h(i,j,2)  = w(i,j,4) * velx(i,j)
+!h(i,j,3)  = w(i,j,4) * vely(i,j)
+!h(i,j,4)  = w(i,j,4) * velz(i,j) + p(i,j)
+!h(i,j,5)  = w(i,j,4) * htot
+    
+        mu(i,j) = betas/(tloc(i,j) + s_suth) * sqrt(tloc(i,j)) * tloc(i,j)
+    
+    
+  
+      enddo
+      enddo
+  
+  
+  
+!$AD II-LOOP
+  do j = 1 , jm + 1
+!$AD II-LOOP
+!DIR$ IVDEP
+  do i = 1 , im + 1
+!
+  fxro1    =  ( c1* (f(i  ,j  , 1) + f(i-1,j  , 1) ) +               &
+                c2* (f(i+1,j  , 1) + f(i-2,j  , 1) ) +               & 
+                c3* (f(i+2,j  , 1) + f(i-3,j  , 1) ) ) * nx(i,j,1) + &
+              ( c1* (g(i  ,j  , 1) + g(i-1,j  , 1) ) +               &
+                c2* (g(i+1,j  , 1) + g(i-2,j  , 1) ) +               & 
+                c3* (g(i+2,j  , 1) + g(i-3,j  , 1) ) ) * ny(i,j,1)
+      
+  fxrou1   =  ( c1* (f(i  ,j  , 2) + f(i-1,j  , 2) ) +               &
+                c2* (f(i+1,j  , 2) + f(i-2,j  , 2) ) +               & 
+                c3* (f(i+2,j  , 2) + f(i-3,j  , 2) ) ) * nx(i,j,1) + &
+              ( c1* (g(i  ,j  , 2) + g(i-1,j  , 2) ) +               &
+                c2* (g(i+1,j  , 2) + g(i-2,j  , 2) ) +               & 
+                c3* (g(i+2,j  , 2) + g(i-3,j  , 2) ) ) * ny(i,j,1)
+      
+  fxrov1   =  ( c1* (f(i  ,j  , 3) + f(i-1,j  , 3) ) +               &
+                c2* (f(i+1,j  , 3) + f(i-2,j  , 3) ) +               & 
+                c3* (f(i+2,j  , 3) + f(i-3,j  , 3) ) ) * nx(i,j,1) + &
+              ( c1* (g(i  ,j  , 3) + g(i-1,j  , 3) ) +               &
+                c2* (g(i+1,j  , 3) + g(i-2,j  , 3) ) +               & 
+                c3* (g(i+2,j  , 3) + g(i-3,j  , 3) ) ) * ny(i,j,1)
+      
+  fxrow1   =  ( c1* (f(i  ,j  , 4) + f(i-1,j  , 4) ) +               &
+                c2* (f(i+1,j  , 4) + f(i-2,j  , 4) ) +               & 
+                c3* (f(i+2,j  , 4) + f(i-3,j  , 4) ) ) * nx(i,j,1) + &
+              ( c1* (g(i  ,j  , 4) + g(i-1,j  , 4) ) +               &
+                c2* (g(i+1,j  , 4) + g(i-2,j  , 4) ) +               & 
+                c3* (g(i+2,j  , 4) + g(i-3,j  , 4) ) ) * ny(i,j,1)
+      
+  fxroe1   =  ( c1* (f(i  ,j  , 5) + f(i-1,j  , 5) ) +               &
+                c2* (f(i+1,j  , 5) + f(i-2,j  , 5) ) +               & 
+                c3* (f(i+2,j  , 5) + f(i-3,j  , 5) ) ) * nx(i,j,1) + &
+              ( c1* (g(i  ,j  , 5) + g(i-1,j  , 5) ) +               &
+                c2* (g(i+1,j  , 5) + g(i-2,j  , 5) ) +               & 
+                c3* (g(i+2,j  , 5) + g(i-3,j  , 5) ) ) * ny(i,j,1)
+      
+  
+  fxro2    =  ( c1* (f(i  ,j    , 1) + f(i  ,j-1  , 1) ) +               &
+                c2* (f(i  ,j+1  , 1) + f(i  ,j-2  , 1) ) +               & 
+                c3* (f(i  ,j+2  , 1) + f(i  ,j-3  , 1) ) ) * nx(i,j,2) + &
+              ( c1* (g(i  ,j    , 1) + g(i  ,j-1  , 1) ) +               &
+                c2* (g(i  ,j+1  , 1) + g(i  ,j-2  , 1) ) +               & 
+                c3* (g(i  ,j+2  , 1) + g(i  ,j-3  , 1) ) ) * ny(i,j,2)
+      
+  fxrou2   =  ( c1* (f(i  ,j    , 2) + f(i  ,j-1  , 2) ) +               &
+                c2* (f(i  ,j+1  , 2) + f(i  ,j-2  , 2) ) +               & 
+                c3* (f(i  ,j+2  , 2) + f(i  ,j-3  , 2) ) ) * nx(i,j,2) + &
+              ( c1* (g(i  ,j    , 2) + g(i  ,j-1  , 2) ) +               &
+                c2* (g(i  ,j+1  , 2) + g(i  ,j-2  , 2) ) +               & 
+                c3* (g(i  ,j+2  , 2) + g(i  ,j-3  , 2) ) ) * ny(i,j,2)
+      
+  fxrov2   =  ( c1* (f(i  ,j    , 3) + f(i  ,j-1  , 3) ) +               &
+                c2* (f(i  ,j+1  , 3) + f(i  ,j-2  , 3) ) +               & 
+                c3* (f(i  ,j+2  , 3) + f(i  ,j-3  , 3) ) ) * nx(i,j,2) + &
+              ( c1* (g(i  ,j    , 3) + g(i  ,j-1  , 3) ) +               &
+                c2* (g(i  ,j+1  , 3) + g(i  ,j-2  , 3) ) +               & 
+                c3* (g(i  ,j+2  , 3) + g(i  ,j-3  , 3) ) ) * ny(i,j,2)
+      
+  fxrow2   =  ( c1* (f(i  ,j    , 4) + f(i  ,j-1  , 4) ) +               &
+                c2* (f(i  ,j+1  , 4) + f(i  ,j-2  , 4) ) +               & 
+                c3* (f(i  ,j+2  , 4) + f(i  ,j-3  , 4) ) ) * nx(i,j,2) + &
+              ( c1* (g(i  ,j    , 4) + g(i  ,j-1  , 4) ) +               &
+                c2* (g(i  ,j+1  , 4) + g(i  ,j-2  , 4) ) +               & 
+                c3* (g(i  ,j+2  , 4) + g(i  ,j-3  , 4) ) ) * ny(i,j,2)
+      
+  fxroe2   =  ( c1* (f(i  ,j    , 5) + f(i  ,j-1  , 5) ) +               &
+                c2* (f(i  ,j+1  , 5) + f(i  ,j-2  , 5) ) +               & 
+                c3* (f(i  ,j+2  , 5) + f(i  ,j-3  , 5) ) ) * nx(i,j,2) + &
+              ( c1* (g(i  ,j    , 5) + g(i  ,j-1  , 5) ) +               &
+                c2* (g(i  ,j+1  , 5) + g(i  ,j-2  , 5) ) +               & 
+                c3* (g(i  ,j+2  , 5) + g(i  ,j-3  , 5) ) ) * ny(i,j,2)
+      
+  
+                 
+! grad for viscous fluxes o4 - 5p
+! for coef ref Zhing et al, JCP2000 ou Shen et al AIAAP 2008
+! 1/16 = 0.0625 ccross = 1/12*1/16
+! TWENTYFOURTH = ONE/24.d0
+! ccros = TWELFTH*0.0625d0
+
+    volm1 = volf(i,j,1)
+    
+    nx_N =   HALF*( nx(i+1,j  ,1) + nx(i  ,j  ,1) )
+    nx_S = - HALF*( nx(i-1,j  ,1) + nx(i  ,j  ,1) )
+    nx_O =   HALF*( nx(i-1,j+1,2) + nx(i  ,j+1,2) )
+    nx_E = - HALF*( nx(i-1,j  ,2) + nx(i  ,j  ,2) )
+!
+    ny_N =   HALF*( ny(i+1,j  ,1) + ny(i  ,j  ,1) )
+    ny_S = - HALF*( ny(i-1,j  ,1) + ny(i  ,j  ,1) )
+    ny_O =   HALF*( ny(i-1,j+1,2) + ny(i  ,j+1,2) )
+    ny_E = - HALF*( ny(i-1,j  ,2) + ny(i  ,j  ,2) )
+    
+    val_N = TWENTYFOURTH * (- velx(i+1,j  ) + 26.d0 * velx(i  ,j  ) - velx(i-1,j  ))
+    val_S = TWENTYFOURTH * (- velx(i  ,j  ) + 26.d0 * velx(i-1,j  ) - velx(i-2,j  ))
+    
+    val_E = ccross * (  -        (-velx(i-2,j-2)+ 9.d0 * velx(i-1,j-2) + 9.d0 * velx(i  ,j-2) - velx(i+1,j-2)) &
+                        + 7.d0 * (-velx(i-2,j-1)+ 9.d0 * velx(i-1,j-1) + 9.d0 * velx(i  ,j-1) - velx(i+1,j-1)) &
+                        + 7.d0 * (-velx(i-2,j  )+ 9.d0 * velx(i-1,j  ) + 9.d0 * velx(i  ,j  ) - velx(i+1,j  )) &
+                        -        (-velx(i-2,j+1)+ 9.d0 * velx(i-1,j+1) + 9.d0 * velx(i  ,j+1) - velx(i+1,j+1)) )
+                     
+    val_O = ccross * (  -        (-velx(i-2,j-1)+ 9.d0 * velx(i-1,j-1) + 9.d0 * velx(i  ,j-1) - velx(i+1,j-1)) &
+                        + 7.d0 * (-velx(i-2,j  )+ 9.d0 * velx(i-1,j  ) + 9.d0 * velx(i  ,j  ) - velx(i+1,j  )) &
+                        + 7.d0 * (-velx(i-2,j+1)+ 9.d0 * velx(i-1,j+1) + 9.d0 * velx(i  ,j+1) - velx(i+1,j+1)) &
+                        -        (-velx(i-2,j+2)+ 9.d0 * velx(i-1,j+2) + 9.d0 * velx(i  ,j+2) - velx(i+1,j+2)) )
+            
+    
+    ux = ( val_N*nx_N + val_S*nx_S + val_O*nx_O + val_E*nx_E )*volm1
+    uy = ( val_N*ny_N + val_S*ny_S + val_O*ny_O + val_E*ny_E )*volm1
+    
+    val_N = TWENTYFOURTH * (- vely(i+1,j  ) + 26.d0 * vely(i  ,j  ) - vely(i-1,j  ))
+    val_S = TWENTYFOURTH * (- vely(i  ,j  ) + 26.d0 * vely(i-1,j  ) - vely(i-2,j  ))
+    
+    val_E = ccross * (  -        (-vely(i-2,j-2)+ 9.d0 * vely(i-1,j-2) + 9.d0 * vely(i  ,j-2) - vely(i+1,j-2)) &
+                        + 7.d0 * (-vely(i-2,j-1)+ 9.d0 * vely(i-1,j-1) + 9.d0 * vely(i  ,j-1) - vely(i+1,j-1)) &
+                        + 7.d0 * (-vely(i-2,j  )+ 9.d0 * vely(i-1,j  ) + 9.d0 * vely(i  ,j  ) - vely(i+1,j  )) &
+                        -        (-vely(i-2,j+1)+ 9.d0 * vely(i-1,j+1) + 9.d0 * vely(i  ,j+1) - vely(i+1,j+1)) )
+                     
+    val_O = ccross * (  -        (-vely(i-2,j-1)+ 9.d0 * vely(i-1,j-1) + 9.d0 * vely(i  ,j-1) - vely(i+1,j-1)) &
+                        + 7.d0 * (-vely(i-2,j  )+ 9.d0 * vely(i-1,j  ) + 9.d0 * vely(i  ,j  ) - vely(i+1,j  )) &
+                        + 7.d0 * (-vely(i-2,j+1)+ 9.d0 * vely(i-1,j+1) + 9.d0 * vely(i  ,j+1) - vely(i+1,j+1)) &
+                        -        (-vely(i-2,j+2)+ 9.d0 * vely(i-1,j+2) + 9.d0 * vely(i  ,j+2) - vely(i+1,j+2)) )
+    
+    vx = ( val_N*nx_N + val_S*nx_S + val_O*nx_O + val_E*nx_E )*volm1
+    vy = ( val_N*ny_N + val_S*ny_S + val_O*ny_O + val_E*ny_E )*volm1
+    
+    val_N = TWENTYFOURTH * (- velz(i+1,j  ) + 26.d0 * velz(i  ,j  ) - velz(i-1,j  ))
+    val_S = TWENTYFOURTH * (- velz(i  ,j  ) + 26.d0 * velz(i-1,j  ) - velz(i-2,j  ))
+    
+    val_E = ccross * (  -        (-velz(i-2,j-2)+ 9.d0 * velz(i-1,j-2) + 9.d0 * velz(i  ,j-2) - velz(i+1,j-2)) &
+                        + 7.d0 * (-velz(i-2,j-1)+ 9.d0 * velz(i-1,j-1) + 9.d0 * velz(i  ,j-1) - velz(i+1,j-1)) &
+                        + 7.d0 * (-velz(i-2,j  )+ 9.d0 * velz(i-1,j  ) + 9.d0 * velz(i  ,j  ) - velz(i+1,j  )) &
+                        -        (-velz(i-2,j+1)+ 9.d0 * velz(i-1,j+1) + 9.d0 * velz(i  ,j+1) - velz(i+1,j+1)) )
+                     
+    val_O = ccross * (  -        (-velz(i-2,j-1)+ 9.d0 * velz(i-1,j-1) + 9.d0 * velz(i  ,j-1) - velz(i+1,j-1)) &
+                        + 7.d0 * (-velz(i-2,j  )+ 9.d0 * velz(i-1,j  ) + 9.d0 * velz(i  ,j  ) - velz(i+1,j  )) &
+                        + 7.d0 * (-velz(i-2,j+1)+ 9.d0 * velz(i-1,j+1) + 9.d0 * velz(i  ,j+1) - velz(i+1,j+1)) &
+                        -        (-velz(i-2,j+2)+ 9.d0 * velz(i-1,j+2) + 9.d0 * velz(i  ,j+2) - velz(i+1,j+2)) )
+    
+    wx = ( val_N*nx_N + val_S*nx_S + val_O*nx_O + val_E*nx_E )*volm1
+    wy = ( val_N*ny_N + val_S*ny_S + val_O*ny_O + val_E*ny_E )*volm1 
+                 
+    val_N = TWENTYFOURTH * (- tloc(i+1,j  ) + 26.d0 * tloc(i  ,j  ) - tloc(i-1,j  ))
+    val_S = TWENTYFOURTH * (- tloc(i  ,j  ) + 26.d0 * tloc(i-1,j  ) - tloc(i-2,j  ))
+    
+    val_E = ccross * (  -        (-tloc(i-2,j-2)+ 9.d0 * tloc(i-1,j-2) + 9.d0 * tloc(i  ,j-2) - tloc(i+1,j-2)) &
+                        + 7.d0 * (-tloc(i-2,j-1)+ 9.d0 * tloc(i-1,j-1) + 9.d0 * tloc(i  ,j-1) - tloc(i+1,j-1)) &
+                        + 7.d0 * (-tloc(i-2,j  )+ 9.d0 * tloc(i-1,j  ) + 9.d0 * tloc(i  ,j  ) - tloc(i+1,j  )) &
+                        -        (-tloc(i-2,j+1)+ 9.d0 * tloc(i-1,j+1) + 9.d0 * tloc(i  ,j+1) - tloc(i+1,j+1)) )
+                     
+    val_O = ccross * (  -        (-tloc(i-2,j-1)+ 9.d0 * tloc(i-1,j-1) + 9.d0 * tloc(i  ,j-1) - tloc(i+1,j-1)) &
+                        + 7.d0 * (-tloc(i-2,j  )+ 9.d0 * tloc(i-1,j  ) + 9.d0 * tloc(i  ,j  ) - tloc(i+1,j  )) &
+                        + 7.d0 * (-tloc(i-2,j+1)+ 9.d0 * tloc(i-1,j+1) + 9.d0 * tloc(i  ,j+1) - tloc(i+1,j+1)) &
+                        -        (-tloc(i-2,j+2)+ 9.d0 * tloc(i-1,j+2) + 9.d0 * tloc(i  ,j+2) - tloc(i+1,j+2)) )
+    
+    tx = ( val_N*nx_N + val_S*nx_S + val_O*nx_O + val_E*nx_E )*volm1
+    ty = ( val_N*ny_N + val_S*ny_S + val_O*ny_O + val_E*ny_E )*volm1
+!
+! Computation of viscous fluxes
+!
+    uu     = 0.0625d0* (-velx(i-2,j  ) + 9.d0 * velx(i-1,j  ) + 9.d0 * velx(i  ,j  ) - velx(i+1,j  ))
+    vv     = 0.0625d0* (-vely(i-2,j  ) + 9.d0 * vely(i-1,j  ) + 9.d0 * vely(i  ,j  ) - vely(i+1,j  ))
+    ww     = 0.0625d0* (-velz(i-2,j  ) + 9.d0 * velz(i-1,j  ) + 9.d0 * velz(i  ,j  ) - velz(i+1,j  ))
+!
+    mmu    = 0.0625d0* (  -mu(i-2,j  ) + 9.d0 *   mu(i-1,j  ) + 9.d0 *   mu(i  ,j  ) -   mu(i+1,j  ))
+ 
+    lambda = mmu *cpprandtl
+!
+    fvrou1 = TWOTHIRD*mmu*( TWO*ux -     vy        )    
+    fvrov1 =          mmu*(     uy +     vx        )    
+    fvrow1 =          mmu*(                    wx  )    
+    fvroe1 = (lambda*tx + uu*fvrou1 + vv*fvrov1 + ww * fvrow1) 
+!
+    gvrou1 =          mmu*(     uy +     vx        )
+    gvrov1 = TWOTHIRD*mmu*(    -ux + TWO*vy        )
+    gvrow1 =          mmu*(                    wy  )    
+    gvroe1 = lambda*ty + uu*gvrou1 + vv*gvrov1 + ww * gvrow1
+    
+    
+!!  fvrou1 = TWOTHIRD*mmu*( TWO*ux -     vy  -   wz  )
+!!  fvrov1 =          mmu*(     uy +     vx          )
+!!  fvrow1 =          mmu*(     uz           +   wx  )
+!!  fvroe1 = lambda*tx + uu*fvrou1 + vv*fvrov1 + ww * fvrow1
+!!  !
+!!  gvrou1 =          mmu*(     uy +     vx          )
+!!  gvrov1 = TWOTHIRD*mmu*(    -ux + TWO*vy   -  wz  )
+!!  gvrow1 =          mmu*(              vz   +  wy  )
+!!  gvroe1 = lambda*ty + uu*gvrou1 + vv*gvrov1 + ww * gvrow1
+                 
+! grad for viscous fluxes o4 - 5p
+!
+! for coef ref Zhing et al, JCP2000 ou Shen et al AIAAP 2008
+! 1/16 = 0.0625 ccross = 1/12*1/16
+! TWENTYFOURTH = ONE/24.d0
+! ccross = TWELFTH*0.0625d0
+
+    volm1 = volf(i,j,2)
+
+    nx_N =   HALF*( nx(i+1,j-1,1) + nx(i+1,j,1) )
+    nx_S = - HALF*( nx(i  ,j-1,1) + nx(i  ,j,1) )
+    nx_O =   HALF*( nx(i  ,j+1,2) + nx(i  ,j,2) )
+    nx_E = - HALF*( nx(i  ,j-1,2) + nx(i  ,j,2) )
+!
+    ny_N =   HALF*( ny(i+1,j-1,1) + ny(i+1,j,1) )
+    ny_S = - HALF*( ny(i  ,j-1,1) + ny(i  ,j,1) )
+    ny_O =   HALF*( ny(i  ,j+1,2) + ny(i  ,j,2) )
+    ny_E = - HALF*( ny(i  ,j-1,2) + ny(i  ,j,2) )            
+    
+    val_N = ccross  * ( -        (-velx(i-1,j-2)+ 9.d0 * velx(i-1,j-1) + 9.d0 * velx(i-1,j  ) - velx(i-1,j+1)) &
+                        + 7.d0 * (-velx(i  ,j-2)+ 9.d0 * velx(i  ,j-1) + 9.d0 * velx(i  ,j  ) - velx(i  ,j+1)) &
+                        + 7.d0 * (-velx(i+1,j-2)+ 9.d0 * velx(i+1,j-1) + 9.d0 * velx(i+1,j  ) - velx(i+1,j+1)) &
+                        -        (-velx(i+2,j-2)+ 9.d0 * velx(i+2,j-1) + 9.d0 * velx(i+2,j  ) - velx(i+2,j+1)) )
+                     
+    val_S = ccross  * ( -        (-velx(i-2,j-2)+ 9.d0 * velx(i-2,j-1) + 9.d0 * velx(i-2,j  ) - velx(i-2,j+1)) &
+                        + 7.d0 * (-velx(i-1,j-2)+ 9.d0 * velx(i-1,j-1) + 9.d0 * velx(i-1,j  ) - velx(i-1,j+1)) &
+                        + 7.d0 * (-velx(i  ,j-2)+ 9.d0 * velx(i  ,j-1) + 9.d0 * velx(i  ,j  ) - velx(i  ,j+1)) &
+                        -        (-velx(i+1,j-2)+ 9.d0 * velx(i+1,j-1) + 9.d0 * velx(i+1,j  ) - velx(i+1,j+1)) )
+                     
+    val_E = TWENTYFOURTH * (- velx(i  ,j  ) + 26.d0 * velx(i  ,j-1) - velx(i  ,j-2))
+    
+    val_O = TWENTYFOURTH * (- velx(i  ,j+1) + 26.d0 * velx(i  ,j  ) - velx(i  ,j-1))
+    
+    
+    ux = ( val_N*nx_N + val_S*nx_S + val_O*nx_O + val_E*nx_E )*volm1
+    uy = ( val_N*ny_N + val_S*ny_S + val_O*ny_O + val_E*ny_E )*volm1
+    
+    val_N = ccross  * ( -        (-vely(i-1,j-2)+ 9.d0 * vely(i-1,j-1) + 9.d0 * vely(i-1,j  ) - vely(i-1,j+1)) &
+                        + 7.d0 * (-vely(i  ,j-2)+ 9.d0 * vely(i  ,j-1) + 9.d0 * vely(i  ,j  ) - vely(i  ,j+1)) &
+                        + 7.d0 * (-vely(i+1,j-2)+ 9.d0 * vely(i+1,j-1) + 9.d0 * vely(i+1,j  ) - vely(i+1,j+1)) &
+                        -        (-vely(i+2,j-2)+ 9.d0 * vely(i+2,j-1) + 9.d0 * vely(i+2,j  ) - vely(i+2,j+1)) )
+                     
+    val_S = ccross  * ( -        (-vely(i-2,j-2)+ 9.d0 * vely(i-2,j-1) + 9.d0 * vely(i-2,j  ) - vely(i-2,j+1)) &
+                        + 7.d0 * (-vely(i-1,j-2)+ 9.d0 * vely(i-1,j-1) + 9.d0 * vely(i-1,j  ) - vely(i-1,j+1)) &
+                        + 7.d0 * (-vely(i  ,j-2)+ 9.d0 * vely(i  ,j-1) + 9.d0 * vely(i  ,j  ) - vely(i  ,j+1)) &
+                        -        (-vely(i+1,j-2)+ 9.d0 * vely(i+1,j-1) + 9.d0 * vely(i+1,j  ) - vely(i+1,j+1)) )
+                     
+    val_E = TWENTYFOURTH * (- vely(i  ,j  ) + 26.d0 * vely(i  ,j-1) - vely(i  ,j-2))
+    
+    val_O = TWENTYFOURTH * (- vely(i  ,j+1) + 26.d0 * vely(i  ,j  ) - vely(i  ,j-1))
+    
+    vx = ( val_N*nx_N + val_S*nx_S + val_O*nx_O + val_E*nx_E )*volm1
+    vy = ( val_N*ny_N + val_S*ny_S + val_O*ny_O + val_E*ny_E )*volm1
+    
+    val_N = ccross  * ( -        (-velz(i-1,j-2)+ 9.d0 * velz(i-1,j-1) + 9.d0 * velz(i-1,j  ) - velz(i-1,j+1)) &
+                        + 7.d0 * (-velz(i  ,j-2)+ 9.d0 * velz(i  ,j-1) + 9.d0 * velz(i  ,j  ) - velz(i  ,j+1)) &
+                        + 7.d0 * (-velz(i+1,j-2)+ 9.d0 * velz(i+1,j-1) + 9.d0 * velz(i+1,j  ) - velz(i+1,j+1)) &
+                        -        (-velz(i+2,j-2)+ 9.d0 * velz(i+2,j-1) + 9.d0 * velz(i+2,j  ) - velz(i+2,j+1)) )
+                     
+    val_S = ccross  * ( -        (-velz(i-2,j-2)+ 9.d0 * velz(i-2,j-1) + 9.d0 * velz(i-2,j  ) - velz(i-2,j+1)) &
+                        + 7.d0 * (-velz(i-1,j-2)+ 9.d0 * velz(i-1,j-1) + 9.d0 * velz(i-1,j  ) - velz(i-1,j+1)) &
+                        + 7.d0 * (-velz(i  ,j-2)+ 9.d0 * velz(i  ,j-1) + 9.d0 * velz(i  ,j  ) - velz(i  ,j+1)) &
+                        -        (-velz(i+1,j-2)+ 9.d0 * velz(i+1,j-1) + 9.d0 * velz(i+1,j  ) - velz(i+1,j+1)) )
+                     
+    val_E = TWENTYFOURTH * (- velz(i  ,j  ) + 26.d0 * velz(i  ,j-1) - velz(i  ,j-2))
+    
+    val_O = TWENTYFOURTH * (- velz(i  ,j+1) + 26.d0 * velz(i  ,j  ) - velz(i  ,j-1))
+    
+    wx = ( val_N*nx_N + val_S*nx_S + val_O*nx_O + val_E*nx_E )*volm1
+    wy = ( val_N*ny_N + val_S*ny_S + val_O*ny_O + val_E*ny_E )*volm1
+    
+    val_N = ccross  * ( -        (-tloc(i-1,j-2)+ 9.d0 * tloc(i-1,j-1) + 9.d0 * tloc(i-1,j  ) - tloc(i-1,j+1)) &
+                        + 7.d0 * (-tloc(i  ,j-2)+ 9.d0 * tloc(i  ,j-1) + 9.d0 * tloc(i  ,j  ) - tloc(i  ,j+1)) &
+                        + 7.d0 * (-tloc(i+1,j-2)+ 9.d0 * tloc(i+1,j-1) + 9.d0 * tloc(i+1,j  ) - tloc(i+1,j+1)) &
+                        -        (-tloc(i+2,j-2)+ 9.d0 * tloc(i+2,j-1) + 9.d0 * tloc(i+2,j  ) - tloc(i+2,j+1)) )
+                     
+    val_S = ccross  * ( -        (-tloc(i-2,j-2)+ 9.d0 * tloc(i-2,j-1) + 9.d0 * tloc(i-2,j  ) - tloc(i-2,j+1)) &
+                        + 7.d0 * (-tloc(i-1,j-2)+ 9.d0 * tloc(i-1,j-1) + 9.d0 * tloc(i-1,j  ) - tloc(i-1,j+1)) &
+                        + 7.d0 * (-tloc(i  ,j-2)+ 9.d0 * tloc(i  ,j-1) + 9.d0 * tloc(i  ,j  ) - tloc(i  ,j+1)) &
+                        -        (-tloc(i+1,j-2)+ 9.d0 * tloc(i+1,j-1) + 9.d0 * tloc(i+1,j  ) - tloc(i+1,j+1)) )
+                     
+    val_E = TWENTYFOURTH * (- tloc(i  ,j  ) + 26.d0 * tloc(i  ,j-1) - tloc(i  ,j-2))
+    
+    val_O = TWENTYFOURTH * (- tloc(i  ,j+1) + 26.d0 * tloc(i  ,j  ) - tloc(i  ,j-1))
+    
+    tx = ( val_N*nx_N + val_S*nx_S + val_O*nx_O + val_E*nx_E )*volm1
+    ty = ( val_N*ny_N + val_S*ny_S + val_O*ny_O + val_E*ny_E )*volm1
+    
+    
+    uu     = 0.0625d0 * (-velx(i  ,j-2) + 9.d0 * velx(i  ,j-1) + 9.d0 * velx(i  ,j  ) - velx(i  ,j+1))
+    vv     = 0.0625d0 * (-vely(i  ,j-2) + 9.d0 * vely(i  ,j-1) + 9.d0 * vely(i  ,j  ) - vely(i  ,j+1))
+    ww     = 0.0625d0 * (-velz(i  ,j-2) + 9.d0 * velz(i  ,j-1) + 9.d0 * velz(i  ,j  ) - velz(i  ,j+1))
+!
+    mmu    = 0.0625d0 * (  -mu(i  ,j-2) + 9.d0 *   mu(i  ,j-1) + 9.d0 *   mu(i  ,j  ) -   mu(i  ,j+1))
+    lambda = mmu *cpprandtl
+!
+    fvrou2 = TWOTHIRD*mmu*( TWO*ux -     vy        )    
+    fvrov2 =          mmu*(     uy +     vx        )    
+    fvrow2 =          mmu*(                    wx  )    
+    fvroe2 = (lambda*tx + uu*fvrou2 + vv*fvrov2 + ww * fvrow2)
+    
+    gvrou2 =          mmu*(     uy +     vx      )  
+    gvrov2 = TWOTHIRD*mmu*(    -ux + TWO*vy      )  
+    gvrow2 =          mmu*(                   wy )  
+    gvroe2 = (lambda*ty + uu*gvrou2 + vv*gvrov2 + ww*gvrow2)
+    
+!!  fvrou2 = TWOTHIRD*mmu*( TWO*ux -     vy  -  wz  )
+!!  fvrov2 =          mmu*(     uy +     vx         )
+!!  fvrow2 =          mmu*(     uz           +  wx  )
+!!  fvroe2 = (lambda*tx + uu*fvrou2 + vv*fvrov2 + ww * fvrow2)
+!!
+!!  gvrou2 =          mmu*(     uy +     vx       )
+!!  gvrov2 = TWOTHIRD*mmu*(    -ux + TWO*vy -  wz )
+!!  gvrow2 =          mmu*(              vz +  wy )
+!!  gvroe2 = (lambda*ty + uu*gvrou2 + vv*gvrov2 + ww*gvrow2)
+    
+  
+       sc1 = nx(i,j,1)
+       sc2 = ny(i,j,1)
+       sn  = sqrt(sc1*sc1 + sc2*sc2)
+       invsn = ONE/sn
+       nxloc = sc1*invsn
+       nyloc = sc2*invsn
+       
+       hn(i,j,1,1) = fxro1  -  dissro1  
+!
+       hn(i,j,2,1) = fxrou1 - dissrou1 - (fvrou1 * nxloc + gvrou1 * nyloc)*sn 
+!
+       hn(i,j,3,1) = fxrov1 - dissrov1 - (fvrov1 * nxloc + gvrov1 * nyloc)*sn
+!
+       hn(i,j,4,1) = fxrow1 - dissrow1 - (fvrow1 * nxloc + gvrow1 * nyloc)*sn
+!
+       hn(i,j,5,1) = fxroe1 - dissroe1 - (fvroe1 * nxloc + gvroe1 * nyloc)*sn
+
+       sc1 = nx(i,j,2)
+       sc2 = ny(i,j,2)
+       sn  = sqrt(sc1*sc1 + sc2*sc2)
+       invsn = ONE/sn
+       nxloc = sc1*invsn
+       nyloc = sc2*invsn
+       
+       hn(i,j,1,2) = fxro2  -  dissro2  
+!
+       hn(i,j,2,2) = fxrou2 - dissrou2 - (fvrou2 * nxloc + gvrou2 * nyloc)*sn 
+!
+       hn(i,j,3,2) = fxrov2 - dissrov2 - (fvrov2 * nxloc + gvrov2 * nyloc)*sn
+!
+       hn(i,j,4,2) = fxrow2 - dissrow2 - (fvrow2 * nxloc + gvrow2 * nyloc)*sn
+!
+       hn(i,j,5,2) = fxroe2 - dissroe2 - (fvroe2 * nxloc + gvroe2 * nyloc)*sn
+
+!
+  enddo
+  enddo
+  
+  
+! fluxes balance
+
+!$AD II-LOOP
+  do j = 1 , jm
+!$AD II-LOOP
+!DIR$ IVDEP
+  do i = 1 , im
+
+residu(i  ,j,1) = - ( hn(i+1,j  ,1,1) - hn(i,j,1,1) ) &
+                  - ( hn(i  ,j+1,1,2) - hn(i,j,1,2) ) 
+                  
+residu(i  ,j,2) = - ( hn(i+1,j  ,2,1) - hn(i,j,2,1) ) &
+                  - ( hn(i  ,j+1,2,2) - hn(i,j,2,2) ) 
+
+residu(i  ,j,3) = - ( hn(i+1,j  ,3,1) - hn(i,j,3,1) ) &
+                  - ( hn(i  ,j+1,3,2) - hn(i,j,3,2) ) 
+
+residu(i  ,j,4) = - ( hn(i+1,j  ,4,1) - hn(i,j,4,1) ) &
+                  - ( hn(i  ,j+1,4,2) - hn(i,j,4,2) ) 
+
+residu(i  ,j,5) = - ( hn(i+1,j  ,5,1) - hn(i,j,5,1) ) &
+                  - ( hn(i  ,j+1,5,2) - hn(i,j,5,2) ) 
+                  
+      
+  enddo
+  enddo
+      
+
+
+end subroutine flux_num_dnc5_nowall_nodiss_2d
+!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
