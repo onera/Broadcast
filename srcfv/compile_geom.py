@@ -14,7 +14,7 @@ for file in files:
     if (ext == '.F90') :
         filein  = dir + file
         fppfile = 'prepro/' + file1 + '.f90'
-        exec_str = 'cpp -I%s -P -C %s %s' % (srcdir, filein, fppfile)
+        exec_str = 'fpp -I%s -P -C %s %s' % (srcdir, filein, fppfile)
         os.system(exec_str)
 
         s1 += fppfile + ' '

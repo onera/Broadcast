@@ -417,6 +417,7 @@ def readNPZtree(filename):
     else:
         w = dic['FlowSolutionInit']
         res = dic['ResidualInit']
+        print('Solution read at Init')
     x0 = dic['x0']
     y0 = dic['y0']
     xc = dic['xc']
@@ -501,8 +502,6 @@ def bl2d_prepro(dgeom = dict(), dphys = dict(), dnum = dict(), compmode = 'direc
         rkcoefs = dnum['rkcoefs']
     elif compmode == 'fixed_point':
         lasolver = dnum['lasolver']
-        if lasolver == 'gmres':
-            tol = dnum['tol']
 
 
     x  = _np.linspace(xini, xini+L , im+1)
@@ -1183,18 +1182,22 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
         # print 'Time to invert = ', timejacinv
         # print 'Time Baseflow = ', (timeconstructjac+timeremove+timecoefdiag+timejaccsc+timejacinv)*ite   
 
+        print('Newton finished, compute Jacobian', flush=True)
+
         Jacvol = _np.zeros((nbentry), order='F')
         for k in range(nbentry):
             # Jacvol[k] = Jac[k]/vol[(IA[k]/(jm*5))+gh, ((JA[k]%(jm*5))/5)+gh] ##UNE GROSSE CONNERIE
             Jacvol[k] = Jac[k]/vol[(IA[k]//(jm*5))+gh, ((IA[k]%(jm*5))//5)+gh]
         Jacsurvol = pet.createMatPetscCSR(IA, JA, Jacvol, im*jm*5, im*jm*5, 5*(2*gh+1)**2)  
 
-        print('filling CGNS', flush=True)
+        print('filling NPZ', flush=True)
         filename = out_dir + '/' + treename
         # fillCGNS(filename, tree, w, res, IA, JA, Jacvol, gh)
         fillNPZ(filename, w, res, IA, JA, Jacvol, gh)
 
         ### Compute Jacobian Dz and Dzz contributions
+
+        print('Compute 3D contributions of the Jacobian', flush=True)
 
         wd   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
         dz   = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
@@ -1230,18 +1233,7 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
         IAdz, JAdz, Jacdz = remove_zero_jac(IAdz, JAdz, Jacdz, mini)
         IAdz2, JAdz2, Jacdz2 = remove_zero_jac(IAdz2, JAdz2, Jacdz2, mini)
 
+        print('filling NPZ 3D', flush=True)
         fillNPZ_3D(filename, IAdz, JAdz, Jacdz, IAdz2, JAdz2, Jacdz2)
         
         ### Resolvent : compute eigenvalues and eigenvectors
-
-        if isresol:
-
-            dir = './'
-            dir = './BASEFLOW_BL/'
-            # dir = './BASEFLOW_300_y150_dnc5_incompressible_RigasSipp_Mach01_shorter_pout/'    
-
-            os.system('mkdir -p %s' % dir)
-            equations = [1, 2, 3] #Forcing on momentum equations
-            print("** Writing matrices for resolvent **")
-            resol.computeandwrite_PETSc(dir, gam, mach, vol, w, im, jm, gh, nbentry, Jac, IA, JA, equations)
-

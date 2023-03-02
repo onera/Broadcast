@@ -1,5 +1,3 @@
-! This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
-
 subroutine bordersfromcenters_2d(x0,y0,xc,yc,im,jm)
   !
   implicit none
@@ -13,7 +11,7 @@ subroutine bordersfromcenters_2d(x0,y0,xc,yc,im,jm)
   real(8),dimension(1:im  ,1:jm    ),intent(in) :: yc 
   ! Non-required arguments -------------------------------------------
   integer :: i,j,g,dummy
-  real(8) :: TWO,HALF,FOURTH! ------------------------------------------------------------------
+  real(8) :: TWO,HALF,FOURTH! ----------------------------------------
   TWO    = 2.d0
   HALF   = 0.5d0
   FOURTH = 0.25d0    
