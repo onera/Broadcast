@@ -243,7 +243,7 @@ def writeCGNS(filename, im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field,
 
     return t
 
-def writeNPZ(filename, im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl, pinf=None):
+def writeNPZ(filename, im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl, cfl, freqres, freqsort, pinf=None):
     ''' Write the data in a NPZ file'''    
 
     w0 = _np.array(w, copy=True)
@@ -257,7 +257,7 @@ def writeNPZ(filename, im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, 
     libbnd     = lf[5]
     libsch     = lf[6]
 
-    _np.savez(filename+'.npz',x0=x0,y0=y0,xc=xc,yc=yc,vol=vol,volf=volf,nx=nx,ny=ny,im=im,jm=jm,gh=gh,FlowSolutionInit=w0,ResidualInit=res0,interf1=interf1,interf2=interf2,interf3=interf3,interf4=interf4,BC1=libbnd + "." + routinein,BC2=libbnd + "." + routineout,BC3=libbnd + "." + routinew,BC4=libbnd + "." + routinenr,Wbd=wbd,Field=field,SchemeType=sch,Scheme=libsch + "." + routinesch,k2=k2,k4=k4,Mach=mach,Prandtl=prandtl,Rgaz=rgaz,Cp=cp,Cv=cv,Gamma=gam,TemperatureSutherland=cs,TemperatureRefSutherland=tref,ViscosityRefSutherland=muref,Pref=pinf)
+    _np.savez(filename+'.npz',x0=x0,y0=y0,xc=xc,yc=yc,vol=vol,volf=volf,nx=nx,ny=ny,im=im,jm=jm,gh=gh,FlowSolutionInit=w0,ResidualInit=res0,interf1=interf1,interf2=interf2,interf3=interf3,interf4=interf4,BC1=libbnd + "." + routinein,BC2=libbnd + "." + routineout,BC3=libbnd + "." + routinew,BC4=libbnd + "." + routinenr,Wbd=wbd,Field=field,SchemeType=sch,Scheme=libsch + "." + routinesch,k2=k2,k4=k4,Mach=mach,Prandtl=prandtl,Rgaz=rgaz,Cp=cp,Cv=cv,Gamma=gam,TemperatureSutherland=cs,TemperatureRefSutherland=tref,ViscosityRefSutherland=muref,Pref=pinf,CFL=cfl,Freqres=freqres,Freqsort=freqsort)
     # print(_np.load(filename+'.npz')['BC4'])
 
 
@@ -451,6 +451,9 @@ def readNPZtree(filename):
     scheme = dic['Scheme']
 
     pinf = dic['Pref']
+    cfl = dic['CFL']
+    freqres = dic['Freqres']
+    freqsort = dic['Freqsort']
 
     libsch, routinesch = _np.array2string(scheme)[1:-1].split('.')
     libbnd, routinein = _np.array2string(BC1)[1:-1].split('.')
@@ -460,7 +463,7 @@ def readNPZtree(filename):
 
     lf = [routinein, routineout, routinenr, routinew, routinesch, libbnd, libsch]
 
-    return im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl, pinf
+    return im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl, cfl, freqres, freqsort, pinf
 
 
 ######################### Private functions ####################
@@ -504,6 +507,7 @@ def bl2d_prepro(dgeom = dict(), dphys = dict(), dnum = dict(), compmode = 'direc
         lasolver = dnum['lasolver']
 
 
+    ## MESH in x-direction
     x  = _np.linspace(xini, xini+L , im+1)
     ## With stretching
     # growthst = dgeom['growth sp']
@@ -512,10 +516,10 @@ def bl2d_prepro(dgeom = dict(), dphys = dict(), dnum = dict(), compmode = 'direc
     # x  = _np.concatenate((x, xst)) 
     # im = im + imst
 
-    ## MESH v2
-    Ny_in   = 80*jm//100   #80%     
-    deltaBL = high/4      #high/4 
-    percent = 0.02 
+    ## MESH in y-direction
+    Ny_in   = 80*jm//100 #number of points inside the BL  
+    deltaBL = high/4     #height of the BL
+    percent = 0.02       #growth factor increase inside the BL
     
     Ny_out  = jm - Ny_in 
     Nend    = high/deltaBL
@@ -523,8 +527,6 @@ def bl2d_prepro(dgeom = dict(), dphys = dict(), dnum = dict(), compmode = 'direc
     y_out   = mesh.exp_stretch_out(Ny_out, deltaBL, percent, Nend)
     y       = _np.concatenate((y_int, y_out)) 
     # y = mesh.bigeom_stretch_in(Ny_in, deltaBL, percent)
-
-
 
     # Initialize all cfd fields
     x0  = _np.zeros((im + 2*gh + 1, jm + 2*gh + 1   ), order='F')
@@ -537,6 +539,14 @@ def bl2d_prepro(dgeom = dict(), dphys = dict(), dnum = dict(), compmode = 'direc
     volf= _np.zeros((im + 2*gh    , jm + 2*gh    , 2), order='F')
     w   = _np.zeros((im + 2*gh    , jm + 2*gh    , 5), order='F')
     res = _np.zeros((im + 2*gh    , jm + 2*gh    , 5), order='F')
+
+    # Compute Geometry
+    for i in range(im+1):
+        x0[i+gh,:] = x[i]
+    for j in range(jm+1):
+        y0[:,j+gh] = y[j]
+    # OR import your own mesh
+    # x0 = ...
 
     # get physical constants
     gam      =  dphys['gam']
@@ -618,22 +628,24 @@ def bl2d_prepro(dgeom = dict(), dphys = dict(), dnum = dict(), compmode = 'direc
     Roref = rhoinf
     Vref  = uinf
     Tref  = tinf
-    # Roref = 1.
-    # Vref  = 1.
-    # Tref  = 1.
-    # Lref  = 1.
-    Pref  = Roref*Vref**2
-    Cvref = Vref**2/Tref
-
-    Eref   = Vref**2
-    Rgpref = Cvref
 
     ## Adim with ref length
-    # Lref   = 8.e-2  #8.e-2
+    # Lref   = 8.e-2  
     # Muref  = Roref*Vref*Lref
     ## OR Adim with unit Reynolds
     Muref  = muinf
     Lref   = Muref/(Roref*Vref)
+    ## OR no normalisation
+    # Roref = 1.
+    # Vref  = 1.
+    # Tref  = 1.
+    # Lref  = 1.
+    # Muref = 1.
+
+    Pref  = Roref*Vref**2
+    Cvref = Vref**2/Tref
+    Eref   = Vref**2
+    Rgpref = Cvref
 
     uinf   = uinf/Vref
     tinf   = tinf/Tref
@@ -679,91 +691,11 @@ def bl2d_prepro(dgeom = dict(), dphys = dict(), dnum = dict(), compmode = 'direc
     print('======StateAdim=========')
     print(' ')
 
-    # Compute Geometry
-    for i in range(im+1):
-        x0[i+gh,:] = x[i]
-    for j in range(jm+1):
-        y0[:,j+gh] = y[j]
-
     # Adim Geom:
     x0 *= 1./Lref
     y0 *= 1./Lref
 
     f_geom.computegeom_2d(x0,y0,nx,ny,xc,yc,vol,volf,im,jm,gh)
-
-    # Blasius for inlet
-    
-    field = _np.zeros((jm, gh, 5), order = 'F') # dummy ones in place of blasius solution
-    wbd   = _np.zeros((im+gh    , 5), order = 'F') # dummy ones in place of top domain state vector
-
-    # Initialization
-    wbd[:, 0]      = state_adim[0]
-    wbd[:, 1]      = state_adim[1]
-    wbd[:, 2]      = state_adim[2]
-    wbd[:, 3]      = state_adim[3]
-    wbd[:, 4]      = state_adim[4]
-    # print 'Wb shape at 2=', _np.shape(wbd)
-
-    field[:, :, 0] = state_adim[0]
-    field[:, :, 1] = state_adim[1]
-    field[:, :, 2] = state_adim[2]
-    field[:, :, 3] = state_adim[3]
-    field[:, :, 4] = state_adim[4]
-
-    # Initialize(field, w, )
-
-    w[:, :, 0]     = state_adim[0]
-    w[:, :, 1]     = state_adim[1]
-    w[:, :, 2]     = state_adim[2]
-    w[:, :, 3]     = state_adim[3]
-    w[:, :, 4]     = state_adim[4]
-
-
-    # Initialise from A.Poulain routine
-    ## Compressible self-similar profile
-    road,uad,vad,Ead = blsim.BLprofile(x0[:,:]*Lref, y0[:,gh:]*Lref,mach, dphys, isplot=False, damped=False)
-    ## OR Incompressible blasius profile 
-    # # import SIM.blasius_profiles as blasiussim
-    # # road = _np.ones((im + 2*gh   , jm + gh     ), order='F')
-    # # uad,vad = blasiussim.blasius_profiles(x0[:,:]*Lref, y0[:,gh:]*Lref,mach, dphys, isplot=False, damped=False)
-
-    road = centers_array(road)
-    uad  = centers_array(uad)
-    vad  = centers_array(vad)
-    Ead  = centers_array(Ead)
-
-    w[:, gh:, 0]     = road[:,:]          * rhoinf
-    w[:, gh:, 1]     = road[:,:]*uad[:,:] * rhoinf * uinf
-    w[:, gh:, 2]     = road[:,:]*vad[:,:] * rhoinf * uinf
-    w[:, gh:, 4]     = road[:,:]*Ead[:,:] * rhoinf * einf
-
-    # w[:, :, 2]     = 0.
-
-    f_init.set_bndbl_2d(w, field, wbd, im)
-
-    ######## Restart from a previous solution with exactly the same mesh
-    import restart_init as ri
-    filet = './Wksp/dnc_9/state_atcenter_ite9.dat'
-    # filet = '../BROADCAST/Wksp/dnc_5/state_atcenter_mesh800_y150_incompressible_RigasSipp_Mach01_shorter_pout.dat'
-    # filet = '../BROADCAST/Wksp/dnc_7/state_atcenter_mesh1000_y150_xini24e-4_longer_selfsim_goodvol.dat'
-    Xin, Yin, roin, rouin, rovin, rowin, roein = ri.read_init(filet)
-
-    # w[gh:-gh, gh:-gh, 0]     = roin
-    # w[gh:-gh, gh:-gh, 1]     = rouin
-    # w[gh:-gh, gh:-gh, 2]     = rovin
-    # w[gh:-gh, gh:-gh, 3]     = rowin
-    # w[gh:-gh, gh:-gh, 4]     = roein
-
-    import interpgrid
-    # w[gh:-gh, gh:-gh, 0] = interpgrid.interpgrid(Xin, Yin, roin, xc[gh:-gh,:], yc[:,gh:-gh])
-    # w[gh:-gh, gh:-gh, 1] = interpgrid.interpgrid(Xin, Yin, rouin, xc[gh:-gh,:], yc[:,gh:-gh])
-    # w[gh:-gh, gh:-gh, 2] = interpgrid.interpgrid(Xin, Yin, rovin, xc[gh:-gh,:], yc[:,gh:-gh])
-    # w[gh:-gh, gh:-gh, 3] = interpgrid.interpgrid(Xin, Yin, rowin, xc[gh:-gh,:], yc[:,gh:-gh])
-    # w[gh:-gh, gh:-gh, 4] = interpgrid.interpgrid(Xin, Yin, roein, xc[gh:-gh,:], yc[:,gh:-gh])
-
-  
-    filename = out_dir + '/initialisation_gh.dat'
-    __writestate_center_gh(filename, im+2*gh, jm+2*gh, w, xc, yc)
 
     #interfaces definitions (may be done at the begining)
     # Ilo
@@ -792,10 +724,74 @@ def bl2d_prepro(dgeom = dict(), dphys = dict(), dnum = dict(), compmode = 'direc
     interf4[0,0] = 1-gh  # imin
     interf4[0,1] = jm # jmin
     interf4[1,0] = im # imax
-    interf4[1,1]= jm # jmaI
+    interf4[1,1]= jm # jmax
+
+    # Blasius for inlet
+    
+    field = _np.zeros((jm, gh, 5), order = 'F') # profile for inlet, different values inside the ghost cells
+    wbd   = _np.zeros((im+gh , 5), order = 'F') # profile for non-reflection top BC, value at the first ghost cell only
+
+    # Initialization
+    wbd[:, 0]      = state_adim[0]
+    wbd[:, 1]      = state_adim[1]
+    wbd[:, 2]      = state_adim[2]
+    wbd[:, 3]      = state_adim[3]
+    wbd[:, 4]      = state_adim[4]
+
+    field[:, :, 0] = state_adim[0]
+    field[:, :, 1] = state_adim[1]
+    field[:, :, 2] = state_adim[2]
+    field[:, :, 3] = state_adim[3]
+    field[:, :, 4] = state_adim[4]
+
+    # Initialize(field, w, )
+
+    w[:, :, 0]     = state_adim[0]
+    w[:, :, 1]     = state_adim[1]
+    w[:, :, 2]     = state_adim[2]
+    w[:, :, 3]     = state_adim[3]
+    w[:, :, 4]     = state_adim[4]
+
+    # Initialise from self-similar solution
+    ## Compressible self-similar profile
+    road,uad,vad,Ead = blsim.BLprofile(x0[:,:]*Lref, y0[:,gh:]*Lref,mach, dphys, isplot=False, damped=False)
+
+    road = centers_array(road)
+    uad  = centers_array(uad)
+    vad  = centers_array(vad)
+    Ead  = centers_array(Ead)
+
+    w[:, gh:, 0]     = road[:,:]          * rhoinf
+    w[:, gh:, 1]     = road[:,:]*uad[:,:] * rhoinf * uinf
+    w[:, gh:, 2]     = road[:,:]*vad[:,:] * rhoinf * uinf
+    w[:, gh:, 4]     = road[:,:]*Ead[:,:] * rhoinf * einf
+
+    f_init.set_bndbl_2d(w, field, wbd, im)
+
+    ######## Restart from a previous solution with exactly the same mesh
+    import restart_init as ri
+    filet = './Wksp/dnc_5/initialisation_gh.dat'
+    # Xin, Yin, roin, rouin, rovin, rowin, roein = ri.read_init(filet)
+
+    ## with exactly the same mesh
+    # w[gh:-gh, gh:-gh, 0]     = roin
+    # w[gh:-gh, gh:-gh, 1]     = rouin
+    # w[gh:-gh, gh:-gh, 2]     = rovin
+    # w[gh:-gh, gh:-gh, 3]     = rowin
+    # w[gh:-gh, gh:-gh, 4]     = roein
+    ## OR interpolate from a different mesh (only valid for cartesian rectangular grid)
+    # import interpgrid
+    # w[gh:-gh, gh:-gh, 0] = interpgrid.interpgrid(Xin, Yin, roin, xc[gh:-gh,:], yc[:,gh:-gh])
+    # w[gh:-gh, gh:-gh, 1] = interpgrid.interpgrid(Xin, Yin, rouin, xc[gh:-gh,:], yc[:,gh:-gh])
+    # w[gh:-gh, gh:-gh, 2] = interpgrid.interpgrid(Xin, Yin, rovin, xc[gh:-gh,:], yc[:,gh:-gh])
+    # w[gh:-gh, gh:-gh, 3] = interpgrid.interpgrid(Xin, Yin, rowin, xc[gh:-gh,:], yc[:,gh:-gh])
+    # w[gh:-gh, gh:-gh, 4] = interpgrid.interpgrid(Xin, Yin, roein, xc[gh:-gh,:], yc[:,gh:-gh])
+  
+    filename = out_dir + '/initialisation_gh.dat'
+    __writestate_center_gh(filename, im+2*gh, jm+2*gh, w, xc, yc)
+
     filename = out_dir + '/' + treename
-    # tree = writeCGNS(filename, im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl, pinf=pinf)
-    writeNPZ(filename, im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl, pinf=pinf)
+    writeNPZ(filename, im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl, cfl, freqres, freqsort, pinf=pinf)
 
 
 def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'totodir', isresol= False):
@@ -803,7 +799,7 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
     filename = out_dir + '/' + treename
     # tree, im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl = readCGNStree(filename)
     # tree, im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl, pinf = readCGNStree(filename)
-    im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl, pinf = readNPZtree(filename)
+    im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl, pinf, cfl, freqres, freqsort = readNPZtree(filename)
 
     Lmax = 1.e6  #0.25e6  #0.10e6  #0.40e6  #1.e6
     r2 = 1.    #elsA 0.2  #0.1   #0.2   #1.
@@ -826,6 +822,21 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
 
     # Time Marching Loop
     if compmode == 'direct':
+        # freqres = ite/2
+        # freqsort= ite/1
+        g1 = 1.0
+        g2 = 0.5  #  1./2.
+        g3 = 0.165919771368
+        g4 = 0.040919732041
+        g5 = 0.007555704391
+        g6 = 0.000891421261
+        rk6 = 1.
+        rk5 = g2
+        rk4 = g3/rk5
+        rk3 = g4/(rk4*rk5)
+        rk2 = g5/(rk3*rk4*rk5)
+        rk1 = g6/(rk2*rk3*rk4*rk5)
+        rkcoefs = [rk1, rk2, rk3, rk4, rk5, rk6]
         freq = freqsort
         time = 0.
         wreal = w*1.
@@ -887,11 +898,13 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
                 filename = out_dir + '/state_atcentergh_ite%i.dat' % it
                 __writestate_center_gh(filename, im, jm, w, xc, yc)
 
+    ## Implicit
     elif compmode == 'impli':
+        # freqres = ite/2
+        # freqsort= ite/1
         fimpli   = lf[-1]
         time = 0.
         dtcoef = 1.
-        # wreal = w*1.
         dw = _np.zeros((im + 2*gh    , jm + 2*gh    , 5), order='F')
         # Boundary on state vector
         finflow(w,'Ilo',interf1,field,nx,ny,gam,im,jm)
@@ -982,20 +995,19 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
         timecoefdiag = 0.
         timejaccsc   = 0.
         timejacinv   = 0.
-        cfl = 1.e10 
+        # cfl = 1.e10 
         dt  = cfl * (yc[gh,gh+1] - yc[gh,gh]) / (1./mach + 1.)
         dtm1 = 1./dt
         for it in range(1,ite+1):
 
             wd   = _np.zeros((im+2*gh, jm+2*gh), order='F')
             resd = _np.zeros((im+2*gh, jm+2*gh), order='F')
+
             # Boundary on state vector
             # finflow(w,'Ilo', interf1, field,im,jm)          
             finflow(w,'Ilo',interf1,field,nx,ny,gam,im,jm)
             fnoref(w,wbd,'Jhi',interf4,nx,ny,gam,gh,im,jm)
-            # foutflow(w,'Ihi', interf2, im, jm, gh)
-            foutflow(w,'Ihi',interf2,pinf,1.,gam,nx,ny,im,jm,gh)
-            # foutflow(w,'Ihi',interf2,pinf,True,gam,nx,ny,im,jm,gh)
+            foutflow(w,'Ihi', interf2, im, jm, gh)
             fwall(w,'Jlo', gam, interf3, gh, im, jm)
                         
             filename = out_dir + '/initialisation_gh.dat'
@@ -1041,7 +1053,7 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
                 cflm1 = r*dtm1
                 print('iter = ', it, flush=True)
                 print("1/cfl = ", cflm1)
-                print(norm, flush=True)
+                print("Residual norm", norm, flush=True)
                 coefdiag = cflm1 * vol[gh:-gh,gh:-gh]
                 for m in range(5):
                     for l in range(1 + 2*gh):
@@ -1055,12 +1067,8 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
                             # w[:,-gh:,:] = 0.
             
                             flininflow(w,wd,'Ilo',interf1,field,nx,ny,gam,im,jm)                
-                            # finflow(w,'Ilo', interf1, field,im,jm) 
                             flinnoref(w,wd,wbd,'Jhi',interf4,nx,ny,gam,gh,im,jm)
-                            # flinoutflow(w,wd,'Ihi', interf2, im, jm, gh)
-                            flinoutflow(w,wd,'Ihi',interf2,pinf,1.,gam,nx,ny,im,jm,gh)
-                            # flinoutflow(w,wd,'Ihi', interf2, pinf,True,gam,nx,ny,im, jm, gh)
-                            # foutflow(w,'Ihi', interf2, im, jm, gh)
+                            flinoutflow(w,wd,'Ihi', interf2, im, jm, gh)
                             flinwall(w,wd,'Jlo', gam, interf3, gh, im, jm)
                                                        
                             if 'dnc' in sch:      
@@ -1192,7 +1200,6 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
 
         print('filling NPZ', flush=True)
         filename = out_dir + '/' + treename
-        # fillCGNS(filename, tree, w, res, IA, JA, Jacvol, gh)
         fillNPZ(filename, w, res, IA, JA, Jacvol, gh)
 
         ### Compute Jacobian Dz and Dzz contributions
@@ -1216,12 +1223,8 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
                     f_misc.testvector(wd,m,l,k,gh,im,jm)
 
                     flininflow(w,wd,'Ilo',interf1,field,nx,ny,gam,im,jm)                
-                    # finflow(w,'Ilo', interf1, field,im,jm) 
                     flinnoref(w,wd,wbd,'Jhi',interf4,nx,ny,gam,gh,im,jm)
-                    # flinoutflow(w,wd,'Ihi', interf2, im, jm, gh)
-                    flinoutflow(w,wd,'Ihi', interf2, pinf,1.,gam,nx,ny,im, jm, gh)
-                    # flinoutflow(w,wd,'Ihi', interf2, pinf,True,gam,nx,ny,im, jm, gh)
-                    # foutflow(w,'Ihi', interf2, im, jm, gh)
+                    flinoutflow(w,wd,'Ihi', interf2, im, jm, gh)
                     flinwall(w,wd,'Jlo', gam, interf3, gh, im, jm)
 
                     f_dz.coeffs_5p_dz(dz, w, wd, x0, y0, nx, ny, xc, yc, vol, volf, gh, cp, cv, prandtl, gam, rgaz, cs, muref, tref, cs, im, jm)
