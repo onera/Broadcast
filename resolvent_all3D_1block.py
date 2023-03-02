@@ -535,7 +535,6 @@ if __name__ == '__main__':
 
     xmax = x[-1,0]
     xmax = 1.75e6
-    # xmax = 1.7e5
 
     ymin = y[0,0]
 
