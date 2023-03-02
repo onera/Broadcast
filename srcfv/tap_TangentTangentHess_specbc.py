@@ -1,4 +1,3 @@
-# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 import os
 
 dir = 'tangent/'
@@ -15,7 +14,7 @@ os.system('mkdir -p %s' % tapdir)
 
 for file in files:
     if 'rbc' in file:
-        print('toto rbc niet %s' % file)
+        print('toto rbc niet %s') % file
     elif ('bc' in file) :
         file1,ext = os.path.splitext(file)
         print(file1)
@@ -25,11 +24,18 @@ for file in files:
         flag = False
         if 'iso_profile' in file:
             routine = 'bc_wall_viscous_iso_profile_2d_d'
-            exec_str = 'tapenade %s -head "%s(wd)/(twallprof,w)" -d -optim diffliveness  -optim statictape -O %s' % (filein, routine, tapdir)
+            #exec_str = 'tapenade %s -head "%s(wd)/(twallprof,w)" -d -optim diffliveness  -optim statictape -O %s' % (filein, routine, tapdir)
+            exec_str = 'tapenade %s -head "%s(wd,twallprofd)/(twallprof,w)" -d -optim diffliveness  -optim statictape -O %s' % (filein, routine, tapdir)
+            flag = True
+        elif 'iso' in file:
+            routine = 'bc_wall_viscous_iso_2d_d'
+            #exec_str = 'tapenade %s -head "%s(wd)/(twallprof,w)" -d -optim diffliveness  -optim statictape -O %s' % (filein, routine, tapdir)
+            exec_str = 'tapenade %s -head "%s(wd,twalld)/(twall,w)" -d -optim diffliveness  -optim statictape -O %s' % (filein, routine, tapdir)
             flag = True
         elif 'blow_profile' in file:
             routine = 'bc_wall_blow_profile_2d_d'
-            exec_str = 'tapenade %s -head "%s(wd)/(velprof,w)" -d -optim diffliveness  -optim statictape -O %s' % (filein, routine, tapdir)
+            #exec_str = 'tapenade %s -head "%s(wd)/(velprof,w)" -d -optim diffliveness  -optim statictape -O %s' % (filein, routine, tapdir)
+            exec_str = 'tapenade %s -head "%s(wd,velprofd)/(velprof,w)" -d -optim diffliveness  -optim statictape -O %s' % (filein, routine, tapdir)
             flag = True
         if flag:
             print(exec_str)
