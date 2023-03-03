@@ -1,4 +1,4 @@
-See BROADCAST full documentation at ...
+See BROADCAST full documentation at `readthedocs <https://broadcast.readthedocs.io/en/latest/>`_.
 
 #. Compilation in the root folder must be done to run the code.
 #. 'srcfv' folder includes BROADCAST source -> Compilation inside this folder must be done to run the code.
