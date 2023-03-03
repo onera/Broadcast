@@ -13,7 +13,7 @@ Created on 21 july 2020
                routine "main" and other related routines.
 '''
 
-import BROADCAST_npzBugeat as toy
+import BROADCAST_npz as toy
 
 import numpy as _np
 # FORTRAN
@@ -53,7 +53,7 @@ treename = 'tree300x150'
 
 ite     = 10
 
-cfl     = 0.9
+cfl     = 1.e10 #very large CFL for Newton method
 freqres = ite/2 # frequency to print residual defined by the integer, here 2
 freqsort= ite/1 # frequency to write solution defined by the integer, here 1
 

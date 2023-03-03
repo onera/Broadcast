@@ -463,7 +463,7 @@ def readNPZtree(filename):
 
     lf = [routinein, routineout, routinenr, routinew, routinesch, libbnd, libsch]
 
-    return im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl, cfl, freqres, freqsort, pinf
+    return im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl, pinf, cfl, freqres, freqsort
 
 
 ######################### Private functions ####################
@@ -838,6 +838,7 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
         rk1 = g6/(rk2*rk3*rk4*rk5)
         rkcoefs = [rk1, rk2, rk3, rk4, rk5, rk6]
         freq = freqsort
+        dt  = cfl * (yc[gh,gh+1] - yc[gh,gh]) / (1./mach + 1.)
         time = 0.
         wreal = w*1.
         denom = im*jm*freq*len(rkcoefs)
@@ -902,7 +903,8 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
     elif compmode == 'impli':
         # freqres = ite/2
         # freqsort= ite/1
-        fimpli   = lf[-1]
+        # fimpli   = lf[-1]
+        fimpli   = eval("f_lhs.impli_matrix_free_2d")
         time = 0.
         dtcoef = 1.
         dw = _np.zeros((im + 2*gh    , jm + 2*gh    , 5), order='F')
@@ -1053,7 +1055,7 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
                 cflm1 = r*dtm1
                 print('iter = ', it, flush=True)
                 print("1/cfl = ", cflm1)
-                print("Residual norm", norm, flush=True)
+                print("Residual norm:", norm, flush=True)
                 coefdiag = cflm1 * vol[gh:-gh,gh:-gh]
                 for m in range(5):
                     for l in range(1 + 2*gh):
@@ -1126,7 +1128,7 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
                 mini = 2.e-16  #2.e-16
                 IA, JA, Jac = remove_zero_jac(IA, JA, Jac, mini)
                 nbentry = _np.shape(Jac)[0]
-                print(nbentry, flush=True)
+                print("Number of non-zero inside the Jacobian:", nbentry, flush=True)
                 timeoutremove = timeit.time.time()
                 timeremove += (timeoutremove - timeinremove)/ite
 

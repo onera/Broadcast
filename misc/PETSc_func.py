@@ -1563,4 +1563,63 @@ def createShiftInvert_Transpose(MAT,target):
 
     return A,ksp_A    
 
+def eigPetsc3(comm,A,Qvol2,P,nev,typeEps=SLEPc.EPS.Type.ARNOLDI,tol=1e-4,verbose=1,maxits=5): #Qvol =norme L2
+  rank = comm.Get_rank()
+  size = comm.Get_size()
+  eps = SLEPc.EPS()
+  eps.create(PETSc.COMM_WORLD)
+  eps.setType(typeEps)
+  # eps.setProblemType(SLEPc.EPS.ProblemType.GHEP) #GHEP pour pouvoir passer Qvol directement
+  eps.setProblemType(SLEPc.EPS.ProblemType.GNHEP)
+  # eps.setProblemType(SLEPc.EPS.ProblemType.NHEP)
+  # eps.setOperators(A,Qvol2.matMult(P)) 
+  # eps.setOperators(A,Qvol2) #Qvol en second argument pour la norme l2
+  t00 = timeit.time.time()
+  eps.setOperators(A,P.transposeMatMult(Qvol2.matMult(P)))
+  t11 = timeit.time.time()
+  t_setop = t11 - t00
+  # print 't set operator : ', t_setop
+  # eps.setOperators(A) 
+  eps.setDimensions(nev=nev)
+  eps.setWhichEigenpairs(1) # largest magnitude
+  # eps.setWhichEigenpairs(SLEPc.EPS.Which.LARGEST_MAGNITUDE) 
+  eps.setTolerances(tol=tol,max_it=maxits)
+  # eps.setTolerances(tol=1.e-5,max_it=10)
+  eps.setTrueResidual(True) # Do not base convergence on residual of transform eigenproblem (trough shift-invert)
+  # eps.setConvergenceTest(SLEPc.EPS.Conv.ABS)
+  eps.setFromOptions()
+  Print ("   ** solving the eigenvalue problem...                         ")
+  import psutil
+  eps.solve()
+  if rank==0:
+    print(psutil.virtual_memory())
+  t22 = timeit.time.time()
+  t_solve = t22 - t11
+  # print 't solve eig : ', t_solve
+  Print ("   ** solved!      \n                   ")
+  # if verbose > 0:
+  printResultsEps(eps)
+  nconv = eps.getConverged()
+  xr, tmp = A.getVecs()
+  # vec, tmp = A.getVecs()
+  vals = []
+  vecs = []
+  # for i in range(nconv):
+  for i in range(nev):  
+    val = eps.getEigenpair(i, xr)
+    vec = gatherVector2ArrayPetsc(xr,comm,broadcast=True)
+    if rank == 0:
+    # vec = vecR + 1j * vecI
+      print(val)
+      # vals.append(val)
+      # vecs.append(vec)
+    vals.append(val)
+    vecs.append(vec)
 
+  comm.Barrier()
+  # print 'vecs = ', vecs
+  return vals, vecs, eps
+  # if rank == 0:
+  #   return vals,vecs,eps
+  # else:
+  #   return None, None, eps

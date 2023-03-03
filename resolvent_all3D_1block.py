@@ -561,7 +561,7 @@ if __name__ == '__main__':
     # eigenvalue, eigenvector_forcing, eigenvector_response = resolvent(frequency, wavenumber, Jacsurvol, Qq, Qq,    Qvol2inv, P, Dz, Dzz)
 
     eig = _np.sqrt(_np.real(eigenvalue))
-    if rank ==0: print(eig, flush=True)
+    if rank ==0: print("Optimal gain:", eig, flush=True)
 
     filename = out_dir + "/eigenval.dat"
     if rank ==0: __writearray2(filename, eig, freq, wave)
