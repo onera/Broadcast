@@ -1146,6 +1146,7 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
                 import psutil
                 ksp  = pet.kspLUPetsc(Jacs)
                 ksp, dwtmp = pet.iterNewton(_np.ravel(res[gh:-gh,gh:-gh,:]), Jacs, ksp)
+                ksp.destroy()
                 if it==1 or it==2 or it==3:
                     print(psutil.virtual_memory())
                 from mpi4py import MPI
