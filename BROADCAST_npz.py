@@ -37,9 +37,10 @@ import os
 import sys
 import timeit
 
-import Converter.Internal as I
-import Converter.PyTree as C
-# import CGNS.MAP as cgm
+# import Converter.Internal as I
+# import Converter.PyTree as C
+
+from mpi4py import MPI
 
 ######################### Private functions ####################
 def __writestate_node(filename, im, jm, w, x0, y0, gh) :
@@ -477,6 +478,9 @@ def bl2d_prepro(dgeom = dict(), dphys = dict(), dnum = dict(), compmode = 'direc
     '''
     os.system('mkdir -p %s' % out_dir)
 
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+
     # Create mesh
     im       = dgeom['im']
     jm       = dgeom['jm']
@@ -791,7 +795,8 @@ def bl2d_prepro(dgeom = dict(), dphys = dict(), dnum = dict(), compmode = 'direc
     __writestate_center_gh(filename, im+2*gh, jm+2*gh, w, xc, yc)
 
     filename = out_dir + '/' + treename
-    writeNPZ(filename, im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl, cfl, freqres, freqsort, pinf=pinf)
+    if rank ==0:
+        writeNPZ(filename, im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl, cfl, freqres, freqsort, pinf=pinf)
 
 
 def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'totodir', isresol= False):
@@ -800,6 +805,9 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
     # tree, im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl = readCGNStree(filename)
     # tree, im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl, pinf = readCGNStree(filename)
     im, jm, gh, w, x0, y0, vol, volf, nx, ny, xc, yc, field, wbd, res, sch, k2, k4, interf1, interf2, interf3, interf4, lf, cp, cv, gam, cs, tref, muref, rgaz, mach, prandtl, pinf, cfl, freqres, freqsort = readNPZtree(filename)
+
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
 
     Lmax = 1.e6  #0.25e6  #0.10e6  #0.40e6  #1.e6
     r2 = 1.    #elsA 0.2  #0.1   #0.2   #1.
@@ -1201,9 +1209,10 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
             Jacvol[k] = Jac[k]/vol[(IA[k]//(jm*5))+gh, ((IA[k]%(jm*5))//5)+gh]
         Jacsurvol = pet.createMatPetscCSR(IA, JA, Jacvol, im*jm*5, im*jm*5, 5*(2*gh+1)**2)  
 
-        print('filling NPZ', flush=True)
-        filename = out_dir + '/' + treename
-        fillNPZ(filename, w, res, IA, JA, Jacvol, gh)
+        if rank ==0:
+            print('filling NPZ', flush=True)
+            filename = out_dir + '/' + treename
+            fillNPZ(filename, w, res, IA, JA, Jacvol, gh)
 
         ### Compute Jacobian Dz and Dzz contributions
 
@@ -1239,7 +1248,8 @@ def bl2d_fromNPZtree(treename, ite = 10, compmode = 'fixed_point', out_dir = 'to
         IAdz, JAdz, Jacdz = remove_zero_jac(IAdz, JAdz, Jacdz, mini)
         IAdz2, JAdz2, Jacdz2 = remove_zero_jac(IAdz2, JAdz2, Jacdz2, mini)
 
-        print('filling NPZ 3D', flush=True)
-        fillNPZ_3D(filename, IAdz, JAdz, Jacdz, IAdz2, JAdz2, Jacdz2)
+        if rank ==0:
+            print('filling NPZ 3D', flush=True)
+            fillNPZ_3D(filename, IAdz, JAdz, Jacdz, IAdz2, JAdz2, Jacdz2)
         
         ### Resolvent : compute eigenvalues and eigenvectors
