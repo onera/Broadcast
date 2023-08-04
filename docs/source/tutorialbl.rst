@@ -64,7 +64,7 @@ Select the order of the extrapolation for the extrapolation BC (if used):
 
    extraporder = 2   # extrapolation order for outflow
 
-Select the equations/type of numerical scheme to use: *polar* for axisymmetric, *nowall* for general cartesian configuration and default one for a flat plate:
+Select the equations/type of numerical scheme to use: *polar* for axisymmetric, *nowall* for general cartesian configuration and default one for an adiabatic flat plate:
 
 .. code-block:: python
 
@@ -109,7 +109,7 @@ Then, the function :func:`bl2d_fromNPZtree` from **BROADCAST_npz.py** solves the
 
 .. note::
 
-   To restart a computation, comment the call to function :func:`bl2d_fromNPZtree` inside **card_bl2d_fv_npz.py**, otherwise you will repeat the pre-process.
+   To restart a computation, comment the call to function :func:`bl2d_prepro` inside **card_bl2d_fv_npz.py**, otherwise you will repeat the pre-process.
 
 
 BROADCAST_npz.py
@@ -125,7 +125,7 @@ Specify the mesh in x-direction, the mesh is here uniform:
    x  = _np.linspace(xini, xini+L , im+1)
 
 
-Specify the mesh in y-direction, the mesh is splitted into two parts with different stretching if y<*deltaBL* or y>*deltaBL*:
+Specify the mesh in y-direction, the mesh is splitted into two parts with different stretching if y < *deltaBL* or y > *deltaBL*:
 
 .. code-block:: python
 
@@ -253,7 +253,7 @@ Then, the construction of the Jacobian follows an iterative procedure:
 #. Definition of a test-vector with :func:`testvector`.
 #. Apply the linearised BC.
 #. Apply the linearised residual.
-#. Indexing of the matrix-vector product to construc the Jacobian with :func:`computejacobianfromjv_relaxed`.
+#. Indexing of the matrix-vector product to construct the Jacobian with :func:`computejacobianfromjv_relaxed`.
 
 The Jacobian is constructed in a CSR PETSc format:
 
@@ -286,7 +286,7 @@ The Jacobian under the form of list of indices and values (and the solution stat
 
    fillNPZ(filename, w, res, IA, JA, Jacvol, gh)
 
-In order to study three-dimensional eigenmodes in resolvent or global stability analyses, the 3D contributions are also computed by the iterative procedure and stored in the same .npz file:
+In order to study three-dimensional periodic eigenmodes in resolvent or global stability analyses, the 3D contributions are also computed by the iterative procedure and stored in the same .npz file:
 
 .. code-block:: python
 

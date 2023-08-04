@@ -18,7 +18,7 @@ The convective scheme implemented is the FE-MUSCL scheme, called DNC in the prog
 
 * :func:`flux_num_dnc3_nowall_2d` calls FE-MUSCL at order 3. It is the baseline scheme for cartesian equations.
 * :func:`flux_num_dnc3_nowall_polar_2d` is the baseline scheme for axisymmetric equations.
-* :func:`flux_num_dnc3_2d` is the scheme for cartesian equations with a wall boundary at j=0 along all i-direction (flat plate case for instance). This scheme includes off-centered computation of gradients in order not to pick values far inside the wall. Results are very similar to those obtained with :func:`flux_num_dnc3_nowall_2d`.
+* :func:`flux_num_dnc3_2d` is the scheme for cartesian equations with an adiabatic wall boundary at j=0 along all i-direction (flat plate case for instance). This scheme includes off-centered computation of gradients in order not to pick values far inside the wall. Results are very similar to those obtained with :func:`flux_num_dnc3_nowall_2d`.
 * :func:`flux_num_dnc3_polar_2d` is the same as above for axisymmetric equations.
 
 
