@@ -359,7 +359,7 @@ For instance in the case of the first Mack mode:
 
 .. code-block:: console
 
-   $ mpirun -np 1 python resolvent_all3D_1block "tree300x150.npz" "./Wksp/firstmackmode" 3. 12.
+   $ mpirun -np 1 python resolvent_all3D_1block "./Wksp/dnc_5/tree300x150.npz" "./Wksp/firstmackmode" 3. 12.
 
 .. note::
 
@@ -409,10 +409,81 @@ For instance:
 
 .. code-block:: console
 
-   $ mpirun -np 1 python biglobal.py "tree300x150.npz" "./Wksp/globalmode" 0. 0.
+   $ mpirun -np 1 python biglobal.py "./Wksp/dnc_5/tree300x150.npz" "./Wksp/globalmode" 0. 0.
 
 .. note::
 
    The ansatz for the goblal mode is :math:`q'=\hat{q}e^{-\lambda t + i\beta z}` with :math:`\lambda=\sigma+i\omega`. From the definition of :math:`A`, one gets :math:`A\hat{q}=\lambda \hat{q}`. Therefore, unstable global modes have negative real part: :math:`\sigma < 0`.
 
 
+Linear sensitivity analysis
+--------
+
+To compute the linear sensitivity analysis of the optimal gain of a boundary layer, the main program file is **computesensitivitymatrices.py**. It calls routines of **BROADCAST_npz_sens.py** whose main routines are called by **card_bl2d_fv_npz_sens.py**.
+
+We consider in this tutorial the sensitivity to steady wall-normal velocity blowing. Therefore, the base-flow and the resolvent analysis are computed again with a different wall boundary condition: :func:`bc_wall_blow_profile_2d` with zero blowing (:math:`velprof=0`). To compute the base-flow, one may use **card_bl2d_fv_npz_sens.py** and **BROADCAST_npz_sens.py** where the good boundary condition is already set. The computation of the resolvent analysis remains identical (the boundary conditions do not appear explicitly in this program).
+
+Then, the card inside **computesensitivitymatrices.py** must be correctly filled in.
+
+Select the output folder and input .npz file:
+
+.. code-block:: python
+
+   out_dir = './Wksp/firstmackmode/'
+   treename = './Wksp/dnc_5/tree300x150'
+
+Select the optimal forcing and response vectors of the instability studied:
+
+.. code-block:: python
+
+   ## 1st Mack mode
+   fileforc = './Wksp/firstmackmode/forcing_atcenter_eig_om3.0_be1.2e+01_n0'
+   fileresp = './Wksp/firstmackmode/response_atcenter_eig_om3.0_be1.2e+01_n0'
+
+If one computes a three-dimensional instability, put *True* so that the additional spanwise contributions to the Jacobian and Hessian matrices are also computed:
+
+.. code-block:: python
+   
+   3Dmode = True  #True if oblique first Mack mode, False if 2D second Mack mode
+
+Select the corresponding optimal frequency, spanwise wavenumber and optimal gain of the instability studied:
+
+.. code-block:: python
+   
+   ## Frequency: omega mode for resolvent operator 
+   omega = 3.e-5   #1st Mack mode
+   ## Only for 3D modes, spanwise wavenumber (beta)
+   if 3Dmode:
+      wave = 12.e-5  #1st Mack mode
+   ## Squarred optimal gain mu^2
+   mu2 = 1.15292235e+08**2  #for 1st Mack mode (adiab)
+
+The card set, the four matrices (plus two additional matrices for three-dimensional instabilities) are computed one after the other and written (heavy size for large discretisation). Computing *dAdq* is quite long and this is longer for *dAdp*.
+
+.. code-block:: python
+   
+   toy.dRdp_fromNPZtree(treename, out_dir = out_dir)
+   toy.dQchudq_fromNPZtree(treename, fileforc, fileresp, out_dir = out_dir)
+   toy.dAdq_fromNPZtree(treename, fileresp, out_dir = out_dir)
+   if 3Dmode:
+      toy.dAdq3D_fromNPZtree(treename, fileresp, out_dir = out_dir)
+   toy.dAdp_fromNPZtree(treename, fileresp, out_dir = out_dir)
+   if 3Dmode:
+      toy.dAdp3D_fromNPZtree(treename, fileresp, out_dir = out_dir)
+
+Eventually, the matrices are read and matrix-vector products are performed to compute the sensitivity vectors. The output vectors will be:
+
+#. *'sensitivitytobaseflow.dat'*: the sensitivity to base-flow modifications.
+#. *'sensitivitytosteadyforcing.dat'*: the sensitivity to a steady source term.
+#. *'sensitivitytowalltempbsf.dat'*: the sensitivity to the wall parameter induced by the base-flow variations.
+#. *'sensitivitytowalltempjac.dat'*: the sensitivity to the wall parameter induced by the Jacobian variations (very small in comparison with the previous one).
+
+Finally run the program:
+
+.. code-block:: console
+
+   $ mpirun -np 1 python computesensitivitymatrices.py
+
+.. note::
+
+   If the sensitivity to another parameter, e.g. another type of boundary condition, is computed, one must replace all the calls to :func:`bc_wall_blow_profile_2d`, its input profile *velprof* and their linearised versions in the file **BROADCAST_npz_sens.py** for the base-flow functions and the six matrices construction functions. Recall that the current implementation assumes that the sensitivity is computed with respect to the wall boundary condition. Further modifications may be necessary e.g. for an inlet boundary condition (for instance inside the functions *dRdp_fromNPZtree* where the *for* loop is not anymore over *im* and *f_misc.computejacobian_* must be modified).
