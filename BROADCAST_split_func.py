@@ -12,6 +12,12 @@ Created on 21 january 2021
 @summary:      This file is the main file of the program. It contains the
                routine "main" and other related routines.
 '''
+
+import os
+import sys
+import timeit
+# os.system('echo $PATH')
+
 import srcfv.f_geom    as f_geom
 import srcfv.f_bnd     as f_bnd
 import srcfv.f_sch     as f_sch
@@ -34,11 +40,6 @@ import meshBL as mesh
 
 import numpy as _np
 import matplotlib.pyplot as plt
-
-import os
-import sys
-import timeit
-
 
 
 ######################### Private functions ####################
@@ -455,7 +456,10 @@ def updatefromBC(w, wbd, field, nx, ny, gam, rgaz, im, jm, gh, interf1, interf2,
     
     # finflow(w,'Ilo', interf1, field,im,jm)          
     finflow(w,'Ilo',interf1,field,nx,ny,gam,im,jm)
+    # print(_np.isnan(_np.sum(w)))
     fnoref(w,wbd,'Jhi',interf4,nx,ny,gam,gh,im,jm)
+    # print(_np.argwhere(_np.isnan(w)==True))
+    # print(_np.isnan(_np.sum(w)))
     if compBC:
         foutflow(w,'Ihi', interf2, im, jm, gh)
     else:
@@ -506,8 +510,8 @@ def updatefromBC_lin(w, wd, wbd, field, nx, ny, gam, rgaz, im, jm, gh, interf1, 
     if wallprof is None:
         flinwall(w,wd,'Jlo', gam, interf3, gh, im, jm)
     else:
-        flinwall(w, wd, wallprof, wallprofd, 'Jlo', gam, 0., rgaz, 0., interf3, gh, im, jm)  #isothermal
-        # flinwall(w, wd, wallprof, wallprofd, 'Jlo', gam, 0., interf3, gh, im, jm)  #blowing
+        flinwall(w, wd, wallprof, wallprofd, 'Jlo', gam, rgaz, interf3, gh, im, jm)  #isothermal
+        # flinwall(w, wd, wallprof, wallprofd, 'Jlo', gam, interf3, gh, im, jm)  #blowing
 
     return w, wd  
 
@@ -520,30 +524,23 @@ def updatefromBC_adj(w, wd, wbd, field, nx, ny, gam, rgaz, im, jm, gh, interf1, 
     if wallprof is None:
         flinwall(w,wd,'Jlo', gam, interf3, gh, im, jm)
     else:
-        flinwall(w, wd, wallprof, wallprofd, 'Jlo', gam, 0., rgaz, 0., interf3, gh, im, jm)  #isothermal
-        # flinwall(w, wd, wallprof, wallprofd, 'Jlo', gam, 0., interf3, gh, im, jm)  #blowing
+        flinwall(w, wd, wallprof, wallprofd, 'Jlo', gam, rgaz, interf3, gh, im, jm)  #isothermal
+        # flinwall(w, wd, wallprof, wallprofd, 'Jlo', gam, interf3, gh, im, jm)  #blowing
     if compBC:
         flinoutflow(w,wd,'Ihi',interf2,im,jm,gh) 
     else:
         flinoutflow(w,wd,'Ihi',interf2,pinf,1.,gam,nx,ny,im,jm,gh)
         # flinoutflow(w,wd,'Ihi',interf2,pinf,0.1,gam,nx,ny,im,jm,gh)
     flinnoref(w,wd,wbd,'Jhi',interf4,nx,ny,gam,gh,im,jm)
-    flininflow(w,wd,'Ilo',interf1,field,nx,ny,gam,im,jm)  
-
-    # flininflow(w,wd,'Ilo',interf1,field,nx,ny,gam,im,jm) 
-    # flinnoref(w,wd,wbd,'Jhi',interf4,nx,ny,gam,gh,im,jm) 
-    # # flinoutflow(w,wd,'Ihi',interf2,im,jm,gh) 
-    # # flinoutflow(w,wd,'Ihi',interf2,pinf,True,gam,nx,ny,im,jm,gh)  
-    # flinoutflow(w,wd,'Ihi',interf2,pinf,1.,gam,nx,ny,im,jm,gh) 
-    # flinwall(w,wd,'Jlo', gam, interf3, gh, im, jm)    
+    flininflow(w,wd,'Ilo',interf1,field,nx,ny,gam,im,jm)    
     
     return w, wd    
 
 def updatefromBC_lin_control(w, wd, wallprof, wallprofd, wbd, field, nx, ny, gam, rgaz, im, jm, gh, interf, compBC=True, flininflow=None, flinoutflow=None, flinnoref=None, flinwall=None, finflow=None, foutflow=None, fjn=None, prr1=None, prr2=None, prd1=None, prd2=None, tr1=None, tr2=None, pinf=None):
     ''' Update the state w from the BC '''
 
-    flinwall(w, wd, wallprof, wallprofd, 'Jlo', gam, 0., rgaz, 0., interf3, gh, im, jm)  #isothermal
-    # flinwall(w, wd, wallprof, wallprofd, 'Jlo', gam, 0., interf3, gh, im, jm)  #blowing
+    flinwall(w, wd, wallprof, wallprofd, 'Jlo', gam, rgaz, interf, gh, im, jm)  #isothermal
+    # flinwall(w, wd, wallprof, wallprofd, 'Jlo', gam, interf, gh, im, jm)  #blowing
 
     return w, wd  
 
@@ -1096,6 +1093,7 @@ def constructJacobianAndDz(w, wd, wdd, im, jm, gh, wbd, field, nx, ny, gam, inte
 def constructdRdp(w, res, wallprof, im, jm, gh, wbd, field, nx, ny, gam, interf, sch, flinsch, x0, y0, xc, yc, vol, volf, cp, cv, prandtl, rgaz, cs, muref, tref, k2, k4, compBC=True, sponge=False, flininflow=None, flinoutflow=None, flinnoref=None, flinwall=None, finflow=None, foutflow=None, it=None, ite=None, eps2ar=None, eps4ar=None, divu2ar=None, vort2ar=None, pinf=None, wref=None, comm=MPI.COMM_WORLD):
 
     nbentry = im*jm*5 * im
+    resd  = _np.zeros((im+2*gh, jm+2*gh,5), order='F')
     wallprofd = _np.zeros((im+2*gh), order='F')
     Jacdp  = _np.zeros((nbentry), order='F')
     IAdp   = _np.zeros((nbentry), dtype=_np.int32, order='F')
@@ -1118,7 +1116,7 @@ def constructdRdp(w, res, wallprof, im, jm, gh, wbd, field, nx, ny, gam, interf,
     mini = 2.e-16
     IAdp, JAdp, Jacdp = remove_zero_jac(IAdp, JAdp, Jacdp, mini)
 
-    dRdp = pet.createMatPetscCSR(IAdRdp, JAdRdp, JacdRdp, im*jm*5, im, im,comm=comm)
+    dRdp = pet.createMatPetscCSR(IAdp, JAdp, Jacdp, im*jm*5, im, im,comm=comm)
 
     return dRdp
 
